@@ -1,0 +1,26 @@
+# Local MongoDB for INVETO — persistent data in Docker volume `inveto_mongo_data`
+# Start:  docker compose up -d
+# Stop:   docker compose down
+# Logs:   docker compose logs -f mongo
+#
+# MongoDB Compass: connect with mongodb://127.0.0.1:27017 then select database "inveto"
+services:
+  mongo:
+    image: mongo:7
+    container_name: inveto-mongo
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    volumes:
+      - inveto_mongo_data:/data/db
+    environment:
+      MONGO_INITDB_DATABASE: inveto
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+
+volumes:
+  inveto_mongo_data:

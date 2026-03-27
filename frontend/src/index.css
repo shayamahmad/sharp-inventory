@@ -1,0 +1,168 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Space+Grotesk:wght@400;500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 40 33% 97%;
+    --foreground: 220 25% 12%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 220 25% 12%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 220 25% 12%;
+
+    --primary: 25 95% 53%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 220 20% 94%;
+    --secondary-foreground: 220 25% 12%;
+
+    --muted: 220 16% 93%;
+    --muted-foreground: 220 10% 40%;
+
+    --accent: 165 70% 42%;
+    --accent-foreground: 0 0% 100%;
+
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 220 15% 88%;
+    --input: 220 15% 88%;
+    --ring: 25 95% 53%;
+
+    --radius: 0.75rem;
+
+    --chart-1: 25 95% 53%;
+    --chart-2: 165 70% 42%;
+    --chart-3: 262 60% 55%;
+    --chart-4: 340 75% 55%;
+    --chart-5: 200 80% 50%;
+
+    --warning: 45 93% 47%;
+    --warning-foreground: 0 0% 100%;
+    --success: 165 70% 42%;
+    --success-foreground: 0 0% 100%;
+    --info: 200 80% 50%;
+    --info-foreground: 0 0% 100%;
+
+    --sidebar-bg: 220 25% 12%;
+    --sidebar-fg: 220 14% 80%;
+    --sidebar-active: 25 95% 53%;
+
+    --gradient-primary: linear-gradient(135deg, hsl(25, 95%, 53%), hsl(340, 75%, 55%));
+    --gradient-accent: linear-gradient(135deg, hsl(165, 70%, 42%), hsl(200, 80%, 50%));
+    --gradient-card: linear-gradient(145deg, hsl(0, 0%, 100%), hsl(220, 20%, 97%));
+
+    --shadow-sm: 0 1px 3px 0 rgba(0, 0, 0, 0.06), 0 1px 2px 0 rgba(0, 0, 0, 0.04);
+    --shadow-md: 0 4px 8px -2px rgba(0, 0, 0, 0.08), 0 2px 4px -2px rgba(0, 0, 0, 0.05);
+    --shadow-lg: 0 10px 20px -5px rgba(0, 0, 0, 0.1), 0 4px 8px -4px rgba(0, 0, 0, 0.06);
+    --shadow-glow: 0 0 20px rgba(245, 130, 32, 0.12);
+
+    --font-display: 'Space Grotesk', sans-serif;
+    --font-body: 'Inter', sans-serif;
+  }
+
+  .dark {
+    --background: 220 25% 7%;
+    --foreground: 220 14% 92%;
+
+    --card: 220 22% 11%;
+    --card-foreground: 220 14% 92%;
+
+    --popover: 220 22% 11%;
+    --popover-foreground: 220 14% 92%;
+
+    --primary: 25 95% 53%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 220 20% 16%;
+    --secondary-foreground: 220 14% 92%;
+
+    --muted: 220 20% 16%;
+    --muted-foreground: 220 10% 55%;
+
+    --accent: 165 70% 42%;
+    --accent-foreground: 0 0% 100%;
+
+    --destructive: 0 62% 50%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 220 20% 18%;
+    --input: 220 20% 18%;
+    --ring: 25 95% 53%;
+
+    --warning: 45 93% 47%;
+    --warning-foreground: 0 0% 100%;
+    --success: 165 70% 42%;
+    --success-foreground: 0 0% 100%;
+    --info: 200 80% 50%;
+    --info-foreground: 0 0% 100%;
+
+    --sidebar-bg: 220 28% 6%;
+    --sidebar-fg: 220 14% 65%;
+    --sidebar-active: 25 95% 53%;
+
+    --gradient-primary: linear-gradient(135deg, hsl(25, 95%, 53%), hsl(340, 75%, 55%));
+    --gradient-accent: linear-gradient(135deg, hsl(165, 70%, 42%), hsl(200, 80%, 50%));
+    --gradient-card: linear-gradient(135deg, hsl(220, 22%, 11%), hsl(220, 22%, 14%));
+
+    --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.3);
+    --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.4), 0 2px 4px -2px rgba(0, 0, 0, 0.3);
+    --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.5), 0 4px 6px -4px rgba(0, 0, 0, 0.4);
+    --shadow-glow: 0 0 20px rgba(245, 130, 32, 0.25);
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-family: var(--font-body);
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    font-family: var(--font-display);
+  }
+}
+
+@layer utilities {
+  .gradient-primary {
+    background: var(--gradient-primary);
+  }
+  .gradient-accent {
+    background: var(--gradient-accent);
+  }
+  .shadow-glow {
+    box-shadow: var(--shadow-glow);
+  }
+  .glass {
+    @apply backdrop-blur-xl bg-card/80 border border-border/50;
+  }
+}
+
+@layer components {
+  .stat-card {
+    @apply rounded-xl p-5 transition-all duration-300 hover:shadow-lg hover:-translate-y-0.5 border border-border;
+    background: var(--gradient-card);
+    box-shadow: var(--shadow-md);
+  }
+  .sidebar-link {
+    @apply flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-medium transition-all duration-200;
+    color: hsl(var(--sidebar-fg));
+  }
+  .sidebar-link:hover {
+    background: hsl(var(--sidebar-active) / 0.1);
+    color: hsl(var(--sidebar-active));
+  }
+  .sidebar-link.active {
+    background: hsl(var(--sidebar-active) / 0.15);
+    color: hsl(var(--sidebar-active));
+  }
+}
