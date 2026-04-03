@@ -8,12 +8,14 @@ function buildLiveNotifications(products: Product[], orders: Order[]): Notificat
   const ts = new Date().toLocaleString('en-IN', { dateStyle: 'short', timeStyle: 'short' });
 
   for (const p of products) {
-    if (p.stock <= p.minStock) {
+    const min = Number(p.minStock);
+    const minSafe = Number.isFinite(min) && min >= 0 ? min : 0;
+    if (p.stock <= minSafe) {
       list.push({
         id: `low-${p.id}`,
         type: 'low_stock',
         title: 'Low stock',
-        message: `${p.name} has ${p.stock} ${p.unit} on hand (minimum ${p.minStock}).`,
+        message: `${p.name ?? p.id} has ${p.stock} ${p.unit ?? ''} on hand (minimum ${minSafe}).`,
         read: false,
         timestamp: ts,
       });
@@ -23,7 +25,7 @@ function buildLiveNotifications(products: Product[], orders: Order[]): Notificat
         id: `dead-${p.id}`,
         type: 'dead_stock',
         title: 'Slow-moving stock',
-        message: `${p.name}: only ${p.salesLast30} sold in the last 30 days with ${p.stock} in stock.`,
+        message: `${p.name ?? p.id}: only ${p.salesLast30} sold in the last 30 days with ${p.stock} in stock.`,
         read: false,
         timestamp: ts,
       });
@@ -42,7 +44,11 @@ function buildLiveNotifications(products: Product[], orders: Order[]): Notificat
     });
   }
 
-  const highDemand = products.filter((p) => p.salesLast30 >= 50 && p.stock <= p.minStock * 2);
+  const highDemand = products.filter((p) => {
+    const m = Number(p.minStock);
+    const ms = Number.isFinite(m) && m >= 0 ? m : 0;
+    return p.salesLast30 >= 50 && p.stock <= ms * 2;
+  });
   for (const p of highDemand) {
     list.push({
       id: `demand-${p.id}`,

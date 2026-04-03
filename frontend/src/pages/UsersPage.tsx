@@ -77,7 +77,7 @@ export default function UsersPage() {
             <div key={user.id} className="bg-card border border-border rounded-xl p-5 hover:shadow-md transition-shadow">
               <div className="flex items-center gap-3 mb-4">
                 <div className="w-12 h-12 rounded-full gradient-primary flex items-center justify-center text-lg font-bold text-primary-foreground">
-                  {user.name.charAt(0)}
+                  {(user.name?.trim()?.charAt(0) || '?').toUpperCase()}
                 </div>
                 <div className="flex-1">
                   <p className="text-sm font-semibold text-foreground">{user.name}</p>

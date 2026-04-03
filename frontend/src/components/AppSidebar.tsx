@@ -54,10 +54,10 @@ export default function AppSidebar({ currentPage, onNavigate }: AppSidebarProps)
       <div className="p-4 mx-3 mb-4 rounded-xl bg-sidebar-active/10">
         <div className="flex items-center gap-3">
           <div className="w-9 h-9 rounded-full gradient-primary flex items-center justify-center text-sm font-bold text-primary-foreground">
-            {user?.name.charAt(0)}
+            {(user?.name?.trim()?.charAt(0) || '?').toUpperCase()}
           </div>
           <div className="flex-1 min-w-0">
-            <p className="text-sm font-medium text-sidebar-fg truncate">{user?.name}</p>
+            <p className="text-sm font-medium text-sidebar-fg truncate">{user?.name ?? 'User'}</p>
             <p className="text-xs text-sidebar-fg/60 capitalize">{user?.role}</p>
           </div>
         </div>

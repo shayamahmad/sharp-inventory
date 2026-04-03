@@ -160,9 +160,12 @@ export function formatCurrency(amount: number): string {
 }
 
 export function getStockStatus(product: Product): 'out' | 'critical' | 'low' | 'ok' {
-  if (product.stock === 0) return 'out';
-  if (product.stock <= product.minStock * 0.3) return 'critical';
-  if (product.stock <= product.minStock) return 'low';
+  const stock = Number(product.stock) || 0;
+  const min = Number(product.minStock);
+  const minSafe = Number.isFinite(min) && min >= 0 ? min : 0;
+  if (stock === 0) return 'out';
+  if (minSafe > 0 && stock <= minSafe * 0.3) return 'critical';
+  if (minSafe > 0 && stock <= minSafe) return 'low';
   return 'ok';
 }
 

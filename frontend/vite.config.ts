@@ -4,11 +4,17 @@ import path from "path";
 
 // https://vitejs.dev/config/
 export default defineConfig({
+  /** Keep Vite’s “Local: http://…” line visible after startup */
+  clearScreen: false,
   server: {
-    host: "::",
+    host: true,
     port: 8080,
+    /** If 8080 is taken (Docker, Java, another Vite app), Vite uses 8081, 8082, … */
+    strictPort: false,
+    /** Opens your default browser to the URL Vite actually bound to */
+    open: true,
     hmr: {
-      overlay: false,
+      overlay: true,
     },
     // Forward /api/* to Express (backend PORT, default 3001). Requires `npm run api` or `npm run dev:full`.
     proxy: {
