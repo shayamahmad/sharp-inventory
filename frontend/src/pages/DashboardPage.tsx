@@ -21,6 +21,7 @@ import { TrendingUp, ShoppingCart, Package, AlertTriangle, ArrowUpRight, ArrowDo
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line, Legend } from 'recharts';
 import { Input } from '@/components/ui/input';
 import { processNLQuery } from '@/lib/nlQueryEngine';
+import InventoryHealthScoreWidget from '@/components/InventoryHealthScoreWidget';
 
 export default function DashboardPage() {
   const { products, orders, purchaseOrders } = useInventory();
@@ -153,6 +154,8 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-6 animate-fade-in">
+      <InventoryHealthScoreWidget />
+
       {/* NL Search */}
       <form onSubmit={handleNLSearch} className="relative">
         <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
