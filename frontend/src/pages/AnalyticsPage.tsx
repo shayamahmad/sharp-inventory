@@ -2,9 +2,9 @@ import React, { useState, useMemo } from 'react';
 import { useInventory } from '@/contexts/InventoryContext';
 import { formatCurrency } from '@/lib/mockData';
 import {
-  buildMonthlySalesFromOrders,
+  buildMonthlySalesChartSeries,
   buildCategorySalesFromProducts,
-  fallbackMonthlyFromProducts,
+  formatChartMonth,
 } from '@/lib/aggregates';
 
 const PIE_COLORS = [
@@ -34,11 +34,10 @@ export default function AnalyticsPage() {
   const [dateRange, setDateRange] = useState(30);
   const [heatmapCatFilter, setHeatmapCatFilter] = useState('All');
 
-  const monthlySales = useMemo(() => {
-    const rows = buildMonthlySalesFromOrders(orders, products);
-    if (rows.length === 0) return fallbackMonthlyFromProducts(products, orders.length);
-    return rows.slice(-8);
-  }, [orders, products]);
+  const monthlySales = useMemo(
+    () => buildMonthlySalesChartSeries(orders, products, 8),
+    [orders, products]
+  );
 
   const categoryRevenue = useMemo(
     () =>
@@ -85,12 +84,18 @@ export default function AnalyticsPage() {
   const categories = useMemo(() => [...new Set(products.map((p) => p.category))], [products]);
   const weeklyTrends = useMemo(() => {
     const weeks = Array.from({ length: 12 }, (_, i) => `W${i + 1}`);
+    const hash = (s: string, i: number) => {
+      let h = i * 17;
+      for (let k = 0; k < s.length; k++) h = (h << 5) - h + s.charCodeAt(k);
+      return (Math.abs(h) % 1000) / 1000;
+    };
     return weeks.map((week, wi) => {
       const entry: Record<string, string | number> = { week };
       categories.forEach((cat) => {
         const catProducts = products.filter((p) => p.category === cat);
         const base = catProducts.reduce((s, p) => s + p.salesLast30 / 4, 0);
-        entry[cat] = Math.round(base * (0.8 + Math.random() * 0.4) * (1 + wi * 0.02));
+        const jitter = 0.8 + hash(cat, wi) * 0.4;
+        entry[cat] = Math.round(base * jitter * (1 + wi * 0.02));
       });
       return entry;
     });
@@ -143,10 +148,15 @@ export default function AnalyticsPage() {
             <div className="bg-card rounded-xl p-5 border border-border">
               <h3 className="font-display font-semibold text-foreground mb-4">Monthly Revenue</h3>
               <ResponsiveContainer width="100%" height={300}>
-                <AreaChart data={monthlySales}>
+                <AreaChart data={monthlySales} margin={{ left: 4, right: 8 }}>
                   <defs><linearGradient id="revGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="hsl(var(--primary))" stopOpacity={0.3} /><stop offset="95%" stopColor="hsl(var(--primary))" stopOpacity={0} /></linearGradient></defs>
                   <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                  <XAxis dataKey="month" stroke="hsl(var(--muted-foreground))" fontSize={12} />
+                  <XAxis
+                    dataKey="month"
+                    stroke="hsl(var(--muted-foreground))"
+                    fontSize={11}
+                    tickFormatter={(v) => formatChartMonth(String(v))}
+                  />
                   <YAxis stroke="hsl(var(--muted-foreground))" fontSize={12} tickFormatter={v => `₹${(v / 1000).toFixed(0)}k`} />
                   <Tooltip formatter={(v: number) => formatCurrency(v)} contentStyle={{ background: 'hsl(var(--card))', border: '1px solid hsl(var(--border))', borderRadius: '8px', color: 'hsl(var(--foreground))' }} />
                   <Area type="monotone" dataKey="revenue" stroke="hsl(var(--primary))" fill="url(#revGrad)" strokeWidth={3} />

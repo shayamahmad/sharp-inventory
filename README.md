@@ -11,21 +11,21 @@ Inventory and order management: **React + Vite** (`frontend/`), **Express + Mong
 └─────────────────┘                     └─────────────────┘                    └────────▲─────────┘
                                                                                            │
 ┌─────────────────┐                                                                        │
-│  MongoDB Compass│  ─────────── same URI as MONGODB_URI ──────────────────────────────────┘
-│  (GUI)          │      e.g. mongodb://127.0.0.1:27017  → open database **inveto**
+│  MongoDB Compass│  ─────────── same URI as MONGODB_URI (Atlas **mongodb+srv://** or local) ─┘
+│  (GUI)          │      open database **inveto**
 └─────────────────┘
 ```
 
 - **Frontend** loads at **http://localhost:8080** and calls **`/api/...`** (see `frontend/.env`: `VITE_API_URL=` empty).
 - **Vite** forwards **`/api`** to **`http://127.0.0.1:3001`** (`frontend/vite.config.ts`).
-- **Backend** reads **`MONGODB_URI`** in **`backend/.env`** (default **`mongodb://127.0.0.1:27017/inveto`**) and stores all app data in the **`inveto`** database.
-- **MongoDB Compass** must use the **same host/port** as `MONGODB_URI`, then select database **`inveto`** to see the same collections (`customers`, `products`, `orders`, …).
+- **Backend** reads **`MONGODB_URI`** in **`backend/.env`**. Use **[MongoDB Atlas](https://www.mongodb.com/atlas)** (`mongodb+srv://...`) or local **`mongodb://127.0.0.1:27017/inveto`**. Data lives in the database name in that URI (e.g. **`inveto`**).
+- **MongoDB Compass** can connect with the **same** `MONGODB_URI` string (Atlas or local) and open **`inveto`**.
 
 ## One-time setup
 
-1. **MongoDB running**  
-   - Local install: start MongoDB (service on port **27017**), **or**  
-   - Docker: from repo root run `npm run db:up`.
+1. **MongoDB** (pick one)  
+   - **Atlas (cloud):** Create a free cluster at [cloud.mongodb.com](https://cloud.mongodb.com), add a database user, **Network Access** → allow your IP (or `0.0.0.0/0` for dev), then **Connect** → copy the SRV string. Put it in **`backend/.env`** as **`MONGODB_URI=...`** (path should end with `/inveto?...`).  
+   - **Local:** Start MongoDB (service on **27017**) or `npm run db:up` (Docker). Use **`MONGODB_URI=mongodb://127.0.0.1:27017/inveto`**.
 
 2. **Install dependencies** (repo root):
 
@@ -34,7 +34,7 @@ Inventory and order management: **React + Vite** (`frontend/`), **Express + Mong
    ```
 
 3. **Backend env**  
-   Copy `backend/.env.example` → `backend/.env` and adjust `MONGODB_URI` if your MongoDB is not on `127.0.0.1:27017`.
+   Copy `backend/.env.example` → `backend/.env`. Set **`MONGODB_URI`** to your **Atlas** or **local** URI.
 
 4. **Frontend env**  
    Copy `frontend/.env.example` → `frontend/.env` (keep `VITE_API_URL=` empty for the proxy).
@@ -57,7 +57,7 @@ Same as `npm run stack`. This starts **Vite (8080)** and the **API (3001)** at t
 
 1. Open **http://localhost:8080**
 2. Sign in (e.g. **admin@inveto.com** / **admin123** after seed)
-3. In **Compass**, connect with **`mongodb://127.0.0.1:27017`**, open **`inveto`** — edits from the site appear there while the API is running.
+3. In **Compass**, use the **same `MONGODB_URI`** as in `backend/.env` (Atlas **`mongodb+srv://...`** or local **`mongodb://127.0.0.1:27017`**) and open database **`inveto`**.
 
 If you only run `npm run dev`, the UI starts but **the API is not running**; `/api` calls will fail until you run `npm run api` in another terminal or use `dev:full`.
 
@@ -65,8 +65,8 @@ If you only run `npm run dev`, the UI starts but **the API is not running**; `/a
 
 | Field | Value |
 | ----- | ----- |
-| Connection | `mongodb://127.0.0.1:27017` (or `localhost`) |
-| Database to open | **`inveto`** (must match the path in `MONGODB_URI`) |
+| Connection | Paste **`MONGODB_URI`** from `backend/.env` — **Atlas:** full `mongodb+srv://...` string; **local:** `mongodb://127.0.0.1:27017` |
+| Database to open | **`inveto`** (must match the database name in `MONGODB_URI`) |
 
 After `npm run seed`, collections such as `users`, `customers`, `products`, `orders` appear under **`inveto`**.
 
@@ -84,6 +84,7 @@ After `npm run seed`, collections such as `users`, `customers`, `products`, `ord
 | `npm run install:all` | Install frontend + backend dependencies     |
 | `npm run dev:full`    | **Frontend + backend** (use for full stack) |
 | `npm run stack`       | Same as `dev:full`                          |
+| `npm run check:stack` | Ping API + Compass hint (**run `npm run dev:full` first**, then this in another terminal) |
 | `npm run dev`         | Frontend only (port 8080)                   |
 | `npm run api`         | Backend only (port 3001)                    |
 | `npm run build`       | Production build (frontend)                 |
@@ -96,5 +97,22 @@ After `npm run seed`, collections such as `users`, `customers`, `products`, `ord
 
 - **Default (recommended):** `VITE_API_URL=` in `frontend/.env` → browser uses **same origin** + Vite **proxy** to port 3001.
 - **Direct API:** `VITE_API_URL=http://localhost:3001` → browser calls the API directly; `FRONTEND_URL` in `backend/.env` must match how you open the app (e.g. `http://localhost:8080`).
+
+## Deploying on Vercel
+
+**Short answer:** the **Vite/React frontend** fits Vercel well. The **Express API** does not run as a normal always-on server on Vercel the same way it does on your PC; host the API separately (or refactor to serverless—heavy lift).
+
+### Recommended: frontend on Vercel, API + DB elsewhere
+
+1. **MongoDB:** Use [MongoDB Atlas](https://www.mongodb.com/atlas) (cloud). Set `MONGODB_URI` on your API host to the Atlas connection string (database name e.g. `inveto`).
+2. **Backend:** Deploy `backend/` to a Node host such as [Railway](https://railway.app), [Render](https://render.com), [Fly.io](https://fly.io), or similar. Set `PORT` (often provided by the platform), `MONGODB_URI`, `JWT_SECRET`, and `FRONTEND_URL` to your **Vercel site URL** (e.g. `https://your-app.vercel.app`).
+3. **Vercel (frontend):** In the project settings, set **Root Directory** to `frontend`, **Framework Preset** to Vite, or use **Build Command** `npm run build` and **Output Directory** `dist`. Add an environment variable **`VITE_API_URL`** = your public API base URL **without** a trailing slash, e.g. `https://your-api.onrender.com` (the app calls paths like `/api/auth/login`).
+4. **Seed:** Run `npm run seed` once against Atlas from your machine (with `MONGODB_URI` pointing to Atlas) or from a one-off job on the API host.
+
+Vercel’s dev proxy does **not** apply in production; production **must** use `VITE_API_URL` pointing at the real API.
+
+### “All on Vercel”
+
+Mounting the whole Express app as a single [Vercel serverless function](https://vercel.com/docs/functions) is possible in theory but hits **cold starts**, **execution time limits**, and **wiring effort**. Most teams keep the API on a small Node service and only put the static SPA on Vercel.
 
 You can remove a stale nested `sharp-inventory-main/` folder if it is empty; the active app lives in `frontend/` and `backend/` at the repo root.

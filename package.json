@@ -16,7 +16,8 @@
     "db:up": "npm run db:up --prefix ./backend",
     "db:down": "npm run db:down --prefix ./backend",
     "db:logs": "npm run db:logs --prefix ./backend",
-    "install:all": "npm install --prefix ./frontend && npm install --prefix ./backend"
+    "install:all": "npm install --prefix ./frontend && npm install --prefix ./backend",
+    "check:stack": "node scripts/check-stack.mjs"
   },
   "devDependencies": {
     "concurrently": "^9.1.2"
