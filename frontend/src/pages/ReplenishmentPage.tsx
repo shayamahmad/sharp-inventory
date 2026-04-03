@@ -1,9 +1,33 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useInventory } from '@/contexts/InventoryContext';
+import { useAuth } from '@/contexts/AuthContext';
 import { formatCurrency } from '@/lib/mockData';
+import {
+  supplierLeadDaysMapFromPOs,
+  computeOptimalROP,
+  ropMinStockStatus,
+  DEFAULT_SUPPLIER_LEAD_DAYS,
+  SAFETY_STOCK_DAILY_MULTIPLIER,
+} from '@/lib/reorderPointOptimizer';
 import { generateHistory, forecastDemand, computeReplenishment, seasonalFactors, type ReplenishmentPlan } from '@/lib/manufacturingData';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
-import { RefreshCw, TrendingUp, TrendingDown, Minus, ShieldCheck, AlertTriangle, Clock, Package, ChevronDown, ChevronUp } from 'lucide-react';
+import {
+  RefreshCw,
+  TrendingUp,
+  TrendingDown,
+  Minus,
+  ShieldCheck,
+  AlertTriangle,
+  Clock,
+  Package,
+  ChevronDown,
+  ChevronUp,
+  Calculator,
+  SlidersHorizontal,
+  Info,
+} from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 
 const trendIcon = { rising: TrendingUp, falling: TrendingDown, stable: Minus };
 const urgencyStyles: Record<string, string> = {
@@ -13,24 +37,57 @@ const urgencyStyles: Record<string, string> = {
   adequate: 'bg-success/15 text-success border-success/30',
 };
 
+const ropStatusBadge: Record<
+  ReturnType<typeof ropMinStockStatus>,
+  { label: string; className: string }
+> = {
+  dangerously_low: {
+    label: 'Dangerously Low',
+    className: 'bg-destructive/15 text-destructive border-destructive/40',
+  },
+  needs_update: {
+    label: 'Needs Update',
+    className: 'bg-warning/15 text-warning border-warning/40',
+  },
+  good: { label: 'Good', className: 'bg-success/15 text-success border-success/40' },
+};
+
 export default function ReplenishmentPage() {
-  const { products, purchaseOrders } = useInventory();
+  const { products, purchaseOrders, setProducts, addLog } = useInventory();
+  const { user } = useAuth();
+  const [mainTab, setMainTab] = useState<'replenishment' | 'rop'>('replenishment');
   const [selectedProduct, setSelectedProduct] = useState(products[0]?.id || '');
   const [expandedCard, setExpandedCard] = useState<string | null>(null);
 
-  // Use supplier lead times from PO data
-  const supplierLeadTimes = useMemo(() => {
-    const map = new Map<string, number>();
-    const suppliers = [...new Set(purchaseOrders.map(po => po.supplier))];
-    suppliers.forEach(supplier => {
-      const completed = purchaseOrders.filter(po => po.supplier === supplier && po.dateSent && po.dateReceived);
-      if (completed.length > 0) {
-        const avg = completed.reduce((sum, po) => sum + Math.ceil((new Date(po.dateReceived!).getTime() - new Date(po.dateSent!).getTime()) / (1000 * 60 * 60 * 24)), 0) / completed.length;
-        map.set(supplier, Math.round(avg));
-      }
-    });
-    return map;
-  }, [purchaseOrders]);
+  const supplierLeadTimes = useMemo(() => supplierLeadDaysMapFromPOs(purchaseOrders), [purchaseOrders]);
+
+  const ropRows = useMemo(
+    () =>
+      products.map((p) => {
+        const breakdown = computeOptimalROP(p, supplierLeadTimes);
+        const status = ropMinStockStatus(p.minStock, breakdown.optimalROP);
+        const gap = breakdown.optimalROP - p.minStock;
+        return { product: p, breakdown, status, gap };
+      }),
+    [products, supplierLeadTimes]
+  );
+
+  const applyAllROP = () => {
+    setProducts((prev) =>
+      prev.map((p) => {
+        const { optimalROP } = computeOptimalROP(p, supplierLeadTimes);
+        return { ...p, minStock: optimalROP };
+      })
+    );
+    addLog(user?.name || 'System', 'ROP optimizer', 'Applied optimal reorder points (minStock) to all products');
+  };
+
+  useEffect(() => {
+    if (products.length === 0) return;
+    if (!selectedProduct || !products.some((p) => p.id === selectedProduct)) {
+      setSelectedProduct(products[0]!.id);
+    }
+  }, [products, selectedProduct]);
 
   const product = products.find(p => p.id === selectedProduct) || products[0];
   const dailyRate = product ? product.salesLast30 / 30 : 0;
@@ -45,7 +102,7 @@ export default function ReplenishmentPage() {
   const plans: ReplenishmentPlan[] = products.map(p => {
     const plan = computeReplenishment(p);
     const supplierLead = supplierLeadTimes.get(p.supplier);
-    if (supplierLead) plan.leadTimeDays = supplierLead;
+    if (supplierLead != null) plan.leadTimeDays = supplierLead;
     return plan;
   }).sort((a, b) => {
     const order = { critical: 0, soon: 1, planned: 2, adequate: 3 };
@@ -67,12 +124,133 @@ export default function ReplenishmentPage() {
   const toggleCard = (id: string) => setExpandedCard(expandedCard === id ? null : id);
 
   return (
+    <TooltipProvider delayDuration={200}>
     <div className="space-y-6 animate-fade-in">
       <div className="gradient-primary rounded-xl p-6 flex items-center gap-4">
         <RefreshCw className="h-10 w-10 text-primary-foreground" />
         <div><h2 className="text-xl font-display font-bold text-primary-foreground">Intelligent Replenishment</h2><p className="text-primary-foreground/70 text-sm">Advanced demand forecasting with supplier lead time learning</p></div>
       </div>
 
+      <div className="flex gap-2 border-b border-border pb-0">
+        {[
+          { id: 'replenishment' as const, label: 'Forecast & plans', icon: RefreshCw },
+          { id: 'rop' as const, label: 'ROP Optimizer', icon: SlidersHorizontal },
+        ].map((tab) => {
+          const Icon = tab.icon;
+          return (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => setMainTab(tab.id)}
+              className={`flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition-colors -mb-px ${
+                mainTab === tab.id
+                  ? 'border-primary text-primary'
+                  : 'border-transparent text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              <Icon className="h-4 w-4" />
+              {tab.label}
+            </button>
+          );
+        })}
+      </div>
+
+      {mainTab === 'rop' && (
+        <div className="bg-card border border-border rounded-xl overflow-hidden">
+          <div className="px-5 py-4 border-b border-border flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+            <div>
+              <h3 className="font-display font-semibold text-foreground flex items-center gap-2">
+                <Calculator className="h-5 w-5 text-primary" />
+                Reorder point optimizer
+              </h3>
+              <p className="text-sm text-muted-foreground mt-1">
+                Optimal ROP = (avg daily demand × lead time) + safety stock, with safety stock = avg daily × {SAFETY_STOCK_DAILY_MULTIPLIER}. Avg daily = salesLast30 ÷ 30. Lead time = supplier average from completed POs or {DEFAULT_SUPPLIER_LEAD_DAYS} days if none.
+              </p>
+            </div>
+            <Button
+              type="button"
+              onClick={applyAllROP}
+              disabled={products.length === 0}
+              className="shrink-0"
+            >
+              Apply all recommendations
+            </Button>
+          </div>
+          {products.length === 0 ? (
+            <p className="text-sm text-muted-foreground text-center py-12 px-4">No products to optimize.</p>
+          ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead>
+                <tr className="border-b border-border bg-secondary/50">
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase">Product</th>
+                  <th className="px-4 py-3 text-center text-xs font-semibold text-muted-foreground uppercase">Current min stock</th>
+                  <th className="px-4 py-3 text-center text-xs font-semibold text-muted-foreground uppercase">Optimal ROP</th>
+                  <th className="px-4 py-3 text-center text-xs font-semibold text-muted-foreground uppercase">Gap</th>
+                  <th className="px-4 py-3 text-center text-xs font-semibold text-muted-foreground uppercase">Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {ropRows.map(({ product: p, breakdown: b, status, gap }) => {
+                  const leadSource = supplierLeadTimes.has(p.supplier) ? 'PO history avg' : `default ${DEFAULT_SUPPLIER_LEAD_DAYS}d`;
+                  const badge = ropStatusBadge[status];
+                  return (
+                    <tr key={p.id} className="border-b border-border/50 hover:bg-secondary/30 transition-colors">
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-medium text-foreground">{p.name}</span>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <button
+                                type="button"
+                                className="text-muted-foreground hover:text-foreground rounded p-0.5"
+                                aria-label="ROP calculation details"
+                              >
+                                <Info className="h-4 w-4" />
+                              </button>
+                            </TooltipTrigger>
+                            <TooltipContent side="right" className="max-w-sm text-xs space-y-1.5 p-3">
+                              <p className="font-semibold text-foreground">How this ROP was calculated</p>
+                              <p className="text-muted-foreground">
+                                <span className="font-medium text-foreground">ROP</span> = (avg daily × lead days) + safety stock
+                              </p>
+                              <p className="font-mono text-[11px] leading-relaxed text-foreground">
+                                = ({b.avgDailyDemand.toFixed(4)} × {b.leadTimeDays}) + {b.safetyStock.toFixed(4)}
+                                <br />
+                                = {b.rawROP.toFixed(4)} → ceil → <span className="font-semibold">{b.optimalROP}</span>
+                              </p>
+                              <p className="text-muted-foreground border-t border-border pt-1.5 mt-1.5">
+                                Avg daily = {p.salesLast30} ÷ 30 = {b.avgDailyDemand.toFixed(4)}<br />
+                                Lead ({p.supplier}): {b.leadTimeDays}d ({leadSource})<br />
+                                Safety = avg daily × {SAFETY_STOCK_DAILY_MULTIPLIER} = {b.safetyStock.toFixed(4)}
+                              </p>
+                            </TooltipContent>
+                          </Tooltip>
+                        </div>
+                        <p className="text-xs text-muted-foreground mt-0.5">{p.supplier}</p>
+                      </td>
+                      <td className="px-4 py-3 text-sm text-center tabular-nums text-foreground">{p.minStock}</td>
+                      <td className="px-4 py-3 text-sm text-center tabular-nums font-semibold text-foreground">{b.optimalROP}</td>
+                      <td className={`px-4 py-3 text-sm text-center tabular-nums font-medium ${gap > 0 ? 'text-warning' : gap < 0 ? 'text-muted-foreground' : 'text-foreground'}`}>
+                        {gap > 0 ? `+${gap}` : gap}
+                      </td>
+                      <td className="px-4 py-3 text-center">
+                        <span className={`inline-block px-2.5 py-1 rounded-full text-xs font-semibold border ${badge.className}`}>
+                          {badge.label}
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          )}
+        </div>
+      )}
+
+      {mainTab === 'replenishment' && (
+      <>
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {summaryCards.map(c => {
           const Icon = c.icon; const isOpen = expandedCard === c.id;
@@ -188,6 +366,9 @@ export default function ReplenishmentPage() {
           </table>
         </div>
       </div>
+      </>
+      )}
     </div>
+    </TooltipProvider>
   );
 }
