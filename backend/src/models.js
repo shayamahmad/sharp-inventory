@@ -28,6 +28,7 @@ const productSchema = new Schema(
     lastRestocked: String,
     salesLast30: Number,
     image: String,
+    binLocation: String,
   },
   { timestamps: true }
 );

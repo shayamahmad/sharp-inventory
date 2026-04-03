@@ -67,7 +67,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             const offline = tryMockLogin(email, password);
             if (offline) {
               console.warn(
-                '[INVETO] API unavailable; signed in with demo account (local mock data only). Start the backend and run npm run seed to use the database.'
+                '[Inveron] API unavailable; signed in with demo account (local mock data only). Start the backend and run npm run seed to use the database.'
               );
               return offline;
             }
@@ -82,7 +82,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const offline = tryMockLogin(email, password);
         if (offline) {
           console.warn(
-            '[INVETO] Cannot reach API; signed in with demo account (local mock data only). Run: npm run dev:full from the repo root (or npm run api in another terminal).'
+            '[Inveron] Cannot reach API; signed in with demo account (local mock data only). Run: npm run dev:full from the repo root (or npm run api in another terminal).'
           );
           return offline;
         }

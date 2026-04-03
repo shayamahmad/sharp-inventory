@@ -62,7 +62,7 @@ export default function QuotationsPage() {
   const downloadProforma = (qt: typeof quotations[0]) => {
     const doc = new jsPDF();
     doc.setFontSize(20);
-    doc.text('INVETO', 14, 22);
+    doc.text('Inveron', 14, 22);
     doc.setFontSize(10);
     doc.text('Proforma Invoice', 14, 30);
     doc.text(`Quotation: ${qt.id}`, 14, 38);

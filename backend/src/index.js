@@ -17,10 +17,12 @@ if (!process.env.JWT_SECRET) {
 
 const app = express();
 
-/** Allow browser to call API from Vite dev server (localhost and 127.0.0.1 are both common). */
-function devCorsOrigins() {
+const isProduction = process.env.NODE_ENV === 'production';
+
+/** Extra origins from FRONTEND_URL (comma-separated). Adds localhost ↔ 127.0.0.1 variants. */
+function explicitCorsOrigins() {
   const raw = process.env.FRONTEND_URL?.trim();
-  if (!raw) return true;
+  if (!raw) return [];
   const parts = raw.split(',').map((s) => s.trim()).filter(Boolean);
   const out = new Set(parts);
   for (const p of parts) {
@@ -39,9 +41,39 @@ function devCorsOrigins() {
   return [...out];
 }
 
+/**
+ * Dev: any http(s)://localhost:* or 127.0.0.1:* (so Vite can use 8081 if 8080 is busy).
+ * Prod: only FRONTEND_URL list; if empty, allow all (same as before — set FRONTEND_URL in prod).
+ */
+function corsOriginHandler() {
+  return (origin, callback) => {
+    if (!origin) {
+      return callback(null, true);
+    }
+    if (!isProduction) {
+      try {
+        const u = new URL(origin);
+        if (u.hostname === 'localhost' || u.hostname === '127.0.0.1') {
+          return callback(null, true);
+        }
+      } catch {
+        /* fall through */
+      }
+    }
+    const list = explicitCorsOrigins();
+    if (list.length === 0) {
+      return callback(null, true);
+    }
+    if (list.includes(origin)) {
+      return callback(null, true);
+    }
+    return callback(null, false);
+  };
+}
+
 app.use(
   cors({
-    origin: devCorsOrigins(),
+    origin: corsOriginHandler(),
     credentials: true,
   })
 );
@@ -66,11 +98,28 @@ const uri = process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/inveto';
 try {
   await connectDb(uri);
   const dbName = mongoose.connection?.name || '(unknown)';
-  app.listen(port, () => {
-    console.log(`INVETO API listening on http://localhost:${port}`);
-    console.log(`MongoDB database: "${dbName}" (open this DB in Compass to match the app)`);
+  app.listen(port, '0.0.0.0', () => {
+    console.log('');
+    console.log('INVERON API  →  http://127.0.0.1:' + port + '  (Vite proxies /api here when VITE_API_URL is empty)');
+    console.log('MongoDB     →  database "' + dbName + '"');
+    console.log('Compass     →  paste MONGODB_URI from backend/.env (same string as this API uses)');
+    console.log('');
   });
 } catch (err) {
+  console.error('');
   console.error('Failed to connect to MongoDB:', err.message);
+  console.error('');
+  if (String(uri).includes('mongodb+srv://')) {
+    console.error('Atlas checklist:');
+    console.error('  • Network Access → allow your IP or 0.0.0.0/0 (dev only)');
+    console.error('  • Database Access → user/password correct; URL-encode password (@ → %40, # → %23, etc.)');
+    console.error('  • URI must include database name, e.g. ...mongodb.net/inveto?retryWrites=true&w=majority');
+    console.error('  • Compass: paste the SAME MONGODB_URI as backend/.env');
+  } else {
+    console.error('Local MongoDB checklist:');
+    console.error('  • Start mongod on port 27017, or from repo root: npm run db:up (Docker)');
+    console.error('  • URI example: mongodb://127.0.0.1:27017/inveto');
+  }
+  console.error('');
   process.exit(1);
 }

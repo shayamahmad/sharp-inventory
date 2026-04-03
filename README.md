@@ -8,6 +8,7 @@ Inventory and order management: **React + Vite** (`frontend/`), **Express + Mong
 ┌─────────────────┐     proxy /api      ┌─────────────────┐     MONGODB_URI      ┌──────────────────┐
 │  Browser        │  ───────────────►   │  Backend API    │  ───────────────►  │  MongoDB         │
 │  localhost:8080 │   (Vite → :3001)    │  localhost:3001 │                    │  database inveto │
+│  (or :8081…)    │                     │                 │                    │                  │
 └─────────────────┘                     └─────────────────┘                    └────────▲─────────┘
                                                                                            │
 ┌─────────────────┐                                                                        │
@@ -16,7 +17,7 @@ Inventory and order management: **React + Vite** (`frontend/`), **Express + Mong
 └─────────────────┘
 ```
 
-- **Frontend** loads at **http://localhost:8080** and calls **`/api/...`** (see `frontend/.env`: `VITE_API_URL=` empty).
+- **Frontend** loads at the URL Vite prints (**http://localhost:8080** by default; **8081** if 8080 is in use) and calls **`/api/...`** (see `frontend/.env`: **`VITE_API_URL=`** empty = use proxy).
 - **Vite** forwards **`/api`** to **`http://127.0.0.1:3001`** (`frontend/vite.config.ts`).
 - **Backend** reads **`MONGODB_URI`** in **`backend/.env`**. Use **[MongoDB Atlas](https://www.mongodb.com/atlas)** (`mongodb+srv://...`) or local **`mongodb://127.0.0.1:27017/inveto`**. Data lives in the database name in that URI (e.g. **`inveto`**).
 - **MongoDB Compass** can connect with the **same** `MONGODB_URI` string (Atlas or local) and open **`inveto`**.
@@ -55,11 +56,37 @@ npm run dev:full
 
 Same as `npm run stack`. This starts **Vite (8080)** and the **API (3001)** at the same time. Then:
 
-1. Open **http://localhost:8080**
+1. Open the **Local** URL from the terminal (e.g. **http://localhost:8080** or **:8081**)
 2. Sign in (e.g. **admin@inveto.com** / **admin123** after seed)
 3. In **Compass**, use the **same `MONGODB_URI`** as in `backend/.env` (Atlas **`mongodb+srv://...`** or local **`mongodb://127.0.0.1:27017`**) and open database **`inveto`**.
 
 If you only run `npm run dev`, the UI starts but **the API is not running**; `/api` calls will fail until you run `npm run api` in another terminal or use `dev:full`.
+
+### Verify the stack
+
+**Before starting servers** — env files aligned (no secrets printed; Mongo URI is masked):
+
+```bash
+npm run setup:check
+```
+
+With **`npm run dev:full`** still running, in a **second** terminal:
+
+```bash
+npm run check:stack
+```
+
+You should see **`"mongo":"connected"`** and **`"dbName":"inveto"`**. If the API is down, start `dev:full` first.
+
+## Troubleshooting
+
+| Symptom | What to check |
+| ------- | ------------- |
+| Blank / white screen after login | API running? Run **`npm run dev:full`**. Run **`npm run check:stack`**. |
+| Network error on login | **`VITE_API_URL=`** empty in `frontend/.env`, and backend on **3001** (see terminal when API starts). |
+| API exits: “Failed to connect to MongoDB” | **`MONGODB_URI`** in `backend/.env`, Atlas **Network Access** IP, password URL-encoded in SRV string. |
+| Compass empty / no `inveto` | Compass URI must match **`MONGODB_URI`** exactly; run **`npm run seed`**. |
+| CORS errors (direct `VITE_API_URL=http://localhost:3001`) | In **development**, localhost on any port is allowed; in production set **`FRONTEND_URL`** to your real site URL. |
 
 ## MongoDB Compass
 
@@ -84,7 +111,8 @@ After `npm run seed`, collections such as `users`, `customers`, `products`, `ord
 | `npm run install:all` | Install frontend + backend dependencies     |
 | `npm run dev:full`    | **Frontend + backend** (use for full stack) |
 | `npm run stack`       | Same as `dev:full`                          |
-| `npm run check:stack` | Ping API + Compass hint (**run `npm run dev:full` first**, then this in another terminal) |
+| `npm run setup:check` | **Before** dev: confirm `backend/.env` + `frontend/.env` coordinate (proxy + `MONGODB_URI`) |
+| `npm run check:stack` | Ping API + Mongo (**run `npm run dev:full` first**, then this in another terminal) |
 | `npm run dev`         | Frontend only (port 8080)                   |
 | `npm run api`         | Backend only (port 3001)                    |
 | `npm run build`       | Production build (frontend)                 |

@@ -65,20 +65,30 @@ export function processNLQuery(query: string, products: Product[], orders: Order
     }
   }
 
-  // Order status
-  if (q.includes('order') || q.includes('pending') || q.includes('shipped') || q.includes('delivered') || q.includes('placed')) {
-    const statusMatch = ['Placed', 'Processing', 'Shipped', 'Delivered', 'Cancelled'].find(s => q.includes(s.toLowerCase()));
+  // Order status (avoid matching unrelated words like "border" / "recorder")
+  const orderIntent =
+    /\b(orders?|sales orders?|my orders|recent orders?|order list|pending orders?)\b/.test(q) ||
+    ['pending', 'shipped', 'delivered', 'placed', 'processing', 'cancelled'].some((w) => q.includes(w));
+  if (orderIntent) {
+    const statusMatch = ['Placed', 'Processing', 'Shipped', 'Delivered', 'Cancelled'].find((s) =>
+      q.includes(s.toLowerCase())
+    );
     if (statusMatch) {
       const items = orders.filter((o) => o.status === statusMatch).map((o) => ({
-        label: `${o.id} — ${o.customerName}`, value: `₹${o.total}`, sublabel: o.date
+        label: `${o.id} — ${o.customerName}`,
+        value: `₹${o.total}`,
+        sublabel: o.date,
       }));
       return { type: 'orders', title: `${statusMatch} Orders`, items };
     }
-    // All recent orders
-    const items = orders.slice(0, 10).map((o) => ({
-      label: `${o.id} — ${o.customerName}`, value: `₹${o.total} · ${o.status}`, sublabel: o.date
-    }));
-    return { type: 'orders', title: 'Recent Orders', items };
+    if (/\b(orders?|sales orders?|my orders|recent orders?|order list)\b/.test(q)) {
+      const items = orders.slice(0, 10).map((o) => ({
+        label: `${o.id} — ${o.customerName}`,
+        value: `₹${o.total} · ${o.status}`,
+        sublabel: o.date,
+      }));
+      return { type: 'orders', title: 'Recent Orders', items };
+    }
   }
 
   // Profit

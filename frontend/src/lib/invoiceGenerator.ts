@@ -8,7 +8,7 @@ export function generateInvoicePDF(order: Order, products: Product[], options: {
   // Header
   doc.setFontSize(22);
   doc.setFont('helvetica', 'bold');
-  doc.text('INVETO', 14, 22);
+  doc.text('Inveron', 14, 22);
   doc.setFontSize(9);
   doc.setFont('helvetica', 'normal');
   doc.text('Smart Inventory & Order Management', 14, 28);
@@ -83,7 +83,7 @@ export function generateInvoicePDF(order: Order, products: Product[], options: {
   doc.setFontSize(9);
   doc.setFont('helvetica', 'normal');
   doc.text('Thank you for your business!', 14, footerY);
-  doc.text('INVETO — Powered by AI Inventory Intelligence', 14, footerY + 6);
+  doc.text('Inveron — Powered by AI Inventory Intelligence', 14, footerY + 6);
 
   doc.save(`Invoice_${order.id}.pdf`);
 }

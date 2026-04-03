@@ -75,11 +75,15 @@ async function main() {
     process.exit(1);
   }
 
-  console.log('OK   Backend at', workedAt, '→', data);
+  console.log('OK   Backend at', workedAt, '→', JSON.stringify(data));
   console.log('');
-  console.log('MongoDB Compass — paste the same MONGODB_URI as backend/.env');
-  console.log('  Atlas: mongodb+srv://...  |  Local: mongodb://127.0.0.1:27017  →  DB: inveto');
-  console.log('Frontend — http://localhost:8080  (VITE_API_URL= empty uses Vite proxy → API)');
+  if (data && data.mongo !== 'connected') {
+    console.warn('WARN MongoDB state is not "connected" — check MONGODB_URI in backend/.env and Atlas IP allowlist.');
+    console.log('');
+  }
+  console.log('MongoDB Compass — paste the SAME string as MONGODB_URI in backend/.env');
+  console.log('  Then open database:', data?.dbName || 'inveto');
+  console.log('Frontend — open the URL Vite prints (often :8080; if busy, :8081). Keep VITE_API_URL empty for proxy.');
 }
 
 main();

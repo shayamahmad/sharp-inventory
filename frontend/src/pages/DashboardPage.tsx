@@ -22,6 +22,7 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContaine
 import { Input } from '@/components/ui/input';
 import { processNLQuery } from '@/lib/nlQueryEngine';
 import InventoryHealthScoreWidget from '@/components/InventoryHealthScoreWidget';
+import AgentDashboardPanel from '@/components/AgentDashboardPanel';
 
 export default function DashboardPage() {
   const { products, orders, purchaseOrders } = useInventory();
@@ -54,6 +55,15 @@ export default function DashboardPage() {
       fill: PIE_COLORS[i % PIE_COLORS.length],
     }));
   }, [products]);
+
+  const revenueChartKey = useMemo(
+    () => monthlySales.map((m) => `${m.month}:${m.revenue}:${m.profit}`).join('|'),
+    [monthlySales]
+  );
+  const categoryPieKey = useMemo(
+    () => categorySales.map((c) => `${c.name}:${c.value}`).join('|'),
+    [categorySales]
+  );
 
   const totalRevenue = monthlySales.reduce((s, m) => s + m.revenue, 0);
   const totalOrders = orders.length;
@@ -169,6 +179,7 @@ export default function DashboardPage() {
   return (
     <div className="space-y-6 animate-fade-in">
       <InventoryHealthScoreWidget />
+      <AgentDashboardPanel />
 
       {/* NL Search */}
       <form onSubmit={handleNLSearch} className="relative">
@@ -199,14 +210,16 @@ export default function DashboardPage() {
       )}
 
       {/* Daily Summary */}
-      <div className="gradient-primary rounded-xl p-5 flex items-center justify-between">
-        <div>
-          <p className="text-primary-foreground/70 text-sm font-medium">Today&apos;s summary — {summaryDateLabel}</p>
-          <p className="text-primary-foreground text-2xl font-display font-bold mt-1">{formatCurrency(todaySales)} in sales · {todayOrders.length} orders</p>
+      <div className="gradient-primary flex flex-col gap-4 rounded-xl p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5">
+        <div className="min-w-0">
+          <p className="text-sm font-medium text-primary-foreground/70">Today&apos;s summary — {summaryDateLabel}</p>
+          <p className="mt-1 font-display text-lg font-bold text-primary-foreground sm:text-2xl">
+            {formatCurrency(todaySales)} in sales · {todayOrders.length} orders
+          </p>
         </div>
-        <div className="text-right">
-          <p className="text-primary-foreground/70 text-sm">🏆 Top Product Today</p>
-          <p className="text-primary-foreground font-semibold">{topProducts[0]?.name}</p>
+        <div className="shrink-0 text-left sm:text-right">
+          <p className="text-sm text-primary-foreground/70">🏆 Top Product Today</p>
+          <p className="font-semibold text-primary-foreground">{topProducts[0]?.name ?? '—'}</p>
         </div>
       </div>
 
@@ -263,7 +276,7 @@ export default function DashboardPage() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 bg-card rounded-xl p-5 border border-border">
           <h3 className="font-display font-semibold text-foreground mb-4">Revenue & Profit Trend</h3>
-          <ResponsiveContainer width="100%" height={280}>
+          <ResponsiveContainer key={revenueChartKey} width="100%" height={280}>
             <LineChart data={monthlySales} margin={{ left: 4, right: 8 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
               <XAxis
@@ -282,7 +295,7 @@ export default function DashboardPage() {
         </div>
         <div className="bg-card rounded-xl p-5 border border-border">
           <h3 className="font-display font-semibold text-foreground mb-4">Sales by Category</h3>
-          <ResponsiveContainer width="100%" height={280}>
+          <ResponsiveContainer key={categoryPieKey} width="100%" height={280}>
             <PieChart>
               <Pie data={categorySales} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={90} innerRadius={50} paddingAngle={3} label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`} labelLine={false} fontSize={10}>
                 {categorySales.map((entry, i) => <Cell key={i} fill={entry.fill} />)}

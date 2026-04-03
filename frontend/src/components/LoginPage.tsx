@@ -4,7 +4,7 @@ import { useTheme } from '@/contexts/ThemeContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Sun, Moon, Eye, EyeOff, Shield, Users, BookOpen } from 'lucide-react';
-import invetoLogo from '@/assets/inveto-logo.png';
+import brandMark from '@/assets/inveron-brand.png';
 
 export default function LoginPage() {
   const { login } = useAuth();
@@ -40,11 +40,11 @@ export default function LoginPage() {
         </div>
         <div className="relative z-10 text-center p-12">
           <div className="flex items-center justify-center gap-4 mb-6">
-            <img src={invetoLogo} alt="INVETO Logo" className="h-20 w-20 rounded-2xl object-cover shadow-lg" />
-            <h1 className="text-5xl font-display font-bold text-primary-foreground tracking-tight">INVETO</h1>
+            <img src={brandMark} alt="Inveron" className="h-20 w-20 rounded-2xl shadow-lg" width={80} height={80} />
+            <h1 className="text-5xl font-display font-bold text-primary-foreground tracking-tight">Inveron</h1>
           </div>
           <p className="text-primary-foreground/80 text-lg max-w-md mx-auto leading-relaxed">
-            Smart Inventory & Order Management System with AI-powered predictions and real-time analytics
+            Smart inventory and order management with AI-powered predictions and real-time analytics
           </p>
           <div className="mt-10 grid grid-cols-3 gap-6 max-w-sm mx-auto">
             {[
@@ -64,12 +64,12 @@ export default function LoginPage() {
       </div>
 
       {/* Right panel */}
-      <div className="flex-1 flex items-center justify-center p-8">
+      <div className="flex flex-1 items-center justify-center p-4 sm:p-8">
         <div className="w-full max-w-md">
           <div className="flex justify-between items-center mb-8">
             <div className="flex items-center gap-2 lg:hidden">
-              <img src={invetoLogo} alt="INVETO" className="h-10 w-10 rounded-xl object-cover" />
-              <span className="text-2xl font-display font-bold">INVETO</span>
+              <img src={brandMark} alt="Inveron" className="h-10 w-10 rounded-xl" width={40} height={40} />
+              <span className="text-2xl font-display font-bold">Inveron</span>
             </div>
             <button onClick={toggle} className="p-2 rounded-lg bg-secondary hover:bg-secondary/80 transition-colors ml-auto">
               {isDark ? <Sun className="h-5 w-5 text-foreground" /> : <Moon className="h-5 w-5 text-foreground" />}

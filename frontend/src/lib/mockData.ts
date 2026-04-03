@@ -170,9 +170,14 @@ export function getStockStatus(product: Product): 'out' | 'critical' | 'low' | '
 }
 
 export function predictDaysUntilStockout(product: Product): number | null {
-  if (product.salesLast30 === 0) return null;
-  const dailySales = product.salesLast30 / 30;
-  return Math.floor(product.stock / dailySales);
+  const sales = Number(product.salesLast30);
+  const stock = Number(product.stock);
+  if (!Number.isFinite(sales) || sales <= 0) return null;
+  if (!Number.isFinite(stock) || stock < 0) return null;
+  const dailySales = sales / 30;
+  if (dailySales <= 0) return null;
+  const days = Math.floor(stock / dailySales);
+  return Number.isFinite(days) ? days : null;
 }
 
 export function binLocationForProduct(product: Pick<Product, 'id' | 'binLocation'>): string {

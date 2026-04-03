@@ -50,12 +50,12 @@ export default function KpiTicker() {
 
   return (
     <div
-      className="h-8 shrink-0 border-b border-border bg-muted/60 overflow-hidden flex items-center"
+      className="flex h-7 shrink-0 items-center overflow-hidden border-b border-border bg-muted/60 sm:h-8"
       aria-live="polite"
     >
-      <div className="kpi-ticker-track flex whitespace-nowrap text-[11px] text-muted-foreground tabular-nums leading-8">
-        <span className="shrink-0 px-4">{kpis}{pad}</span>
-        <span className="shrink-0 px-4">{kpis}{pad}</span>
+      <div className="kpi-ticker-track flex whitespace-nowrap text-[10px] tabular-nums leading-7 text-muted-foreground sm:text-[11px] sm:leading-8">
+        <span className="shrink-0 px-3 sm:px-4">{kpis}{pad}</span>
+        <span className="shrink-0 px-3 sm:px-4">{kpis}{pad}</span>
       </div>
     </div>
   );

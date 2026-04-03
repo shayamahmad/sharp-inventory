@@ -55,23 +55,52 @@ export interface ForecastDayRow {
   lower: number;
 }
 
+export interface StockTimelineRow {
+  label: string;
+  period: 'past' | 'today' | 'future';
+  /** Reconstructed EOD stock (past/today) or projected on-hand (future) */
+  stock: number;
+}
+
 export interface DemandForecastResult {
   chartRows: ForecastDayRow[];
   accuracyPct: number;
   hasSignal: boolean;
+  /** Past 30d implied EOD stock from current on-hand + daily demand shape, then 30d projected depletion */
+  stockTimeline?: StockTimelineRow[];
 }
 
 /**
  * 30 future days: level = last SES smoothed value; intervals widen with sqrt(horizon).
+ * When `currentStock` is set, builds `stockTimeline`: backward from today's on-hand using the same
+ * daily demand buckets as the forecast history, then forward projected stock at flat SES level.
  */
 export function build30DayDemandForecast(
   salesLast30: number,
   productId: string,
-  alpha = SES_ALPHA
+  alpha = SES_ALPHA,
+  currentStock?: number
 ): DemandForecastResult {
   const x = dailyDemandBuckets(salesLast30, productId);
   const hasSignal = salesLast30 > 0;
   if (!hasSignal) {
+    const flatStock = currentStock ?? 0;
+    const stockTimeline: StockTimelineRow[] | undefined =
+      currentStock != null && Number.isFinite(currentStock)
+        ? [
+            ...Array.from({ length: 29 }, (_, i) => ({
+              label: `−${29 - i}d`,
+              period: 'past' as const,
+              stock: flatStock,
+            })),
+            { label: 'Today', period: 'today' as const, stock: flatStock },
+            ...Array.from({ length: 30 }, (_, h) => ({
+              label: `+${h + 1}d`,
+              period: 'future' as const,
+              stock: Math.max(0, flatStock),
+            })),
+          ]
+        : undefined;
     return {
       chartRows: Array.from({ length: 30 }, (_, i) => ({
         label: `Day ${i + 1}`,
@@ -82,6 +111,7 @@ export function build30DayDemandForecast(
       })),
       accuracyPct: 0,
       hasSignal: false,
+      stockTimeline,
     };
   }
 
@@ -111,5 +141,31 @@ export function build30DayDemandForecast(
     });
   }
 
-  return { chartRows, accuracyPct, hasSignal: true };
+  let stockTimeline: StockTimelineRow[] | undefined;
+  if (currentStock != null && Number.isFinite(currentStock)) {
+    const S = currentStock;
+    const sEod: number[] = new Array(30);
+    sEod[29] = S;
+    for (let i = 28; i >= 0; i--) {
+      sEod[i] = sEod[i + 1]! + x[i + 1]!;
+    }
+    stockTimeline = [];
+    for (let i = 0; i < 30; i++) {
+      const isToday = i === 29;
+      stockTimeline.push({
+        label: isToday ? 'Today' : `−${29 - i}d`,
+        period: isToday ? 'today' : 'past',
+        stock: Math.round(sEod[i]! * 100) / 100,
+      });
+    }
+    for (let h = 1; h <= 30; h++) {
+      stockTimeline.push({
+        label: `+${h}d`,
+        period: 'future',
+        stock: Math.max(0, Math.round((S - lastLevel * h) * 100) / 100),
+      });
+    }
+  }
+
+  return { chartRows, accuracyPct, hasSignal: true, stockTimeline };
 }

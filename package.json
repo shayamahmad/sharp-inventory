@@ -1,7 +1,7 @@
 {
-  "name": "inveto",
+  "name": "inveron",
   "private": true,
-  "description": "INVETO — frontend (Vite/React) and backend (Express/MongoDB)",
+  "description": "Inveron — frontend (Vite/React) and backend (Express/MongoDB)",
   "scripts": {
     "dev": "npm run dev --prefix ./frontend",
     "dev:full": "concurrently -n web,api -c cyan,magenta \"npm run dev --prefix ./frontend\" \"npm run dev --prefix ./backend\"",
@@ -17,7 +17,8 @@
     "db:down": "npm run db:down --prefix ./backend",
     "db:logs": "npm run db:logs --prefix ./backend",
     "install:all": "npm install --prefix ./frontend && npm install --prefix ./backend",
-    "check:stack": "node scripts/check-stack.mjs"
+    "check:stack": "node scripts/check-stack.mjs",
+    "setup:check": "node scripts/verify-setup.mjs"
   },
   "devDependencies": {
     "concurrently": "^9.1.2"

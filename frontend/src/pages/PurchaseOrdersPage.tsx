@@ -318,7 +318,7 @@ export default function PurchaseOrdersPage() {
       </div>
 
       {/* Supplier Lead Time Summary */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
         {uniqueSuppliers.slice(0, 4).map(supplier => {
           const avgLead = getSupplierLeadTimes(supplier);
           return (

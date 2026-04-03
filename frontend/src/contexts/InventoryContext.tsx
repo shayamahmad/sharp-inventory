@@ -22,6 +22,11 @@ import {
 import { isApiConfigured, getToken, apiJson, syncIdList, stripEntityMeta, ApiError } from '@/lib/api';
 import { nextPrefixedId } from '@/lib/ids';
 
+/** Cross-tab + Compass alignment: other windows refetch after local writes complete */
+const INVENTORY_BROADCAST = 'inveto-inventory-sync-v1';
+/** Poll MongoDB-backed API while tab is visible (quiet = no full-screen loader) */
+const INVENTORY_POLL_MS = 28_000;
+
 function mapRawMaterialRow(row: Record<string, unknown>): BOMItem {
   const materialId = String(row.materialId ?? row.id ?? '');
   return {
@@ -170,6 +175,8 @@ interface InventoryContextType {
   getAvailableStock: (productId: string) => number;
   /** True while first load from API is in progress */
   inventoryHydrating: boolean;
+  /** Reload all inventory from the API (e.g. after edits in MongoDB Compass) */
+  refreshInventory: () => Promise<void>;
   rawMaterials: BOMItem[];
   setRawMaterials: React.Dispatch<React.SetStateAction<BOMItem[]>>;
   billsOfMaterials: BillOfMaterials[];
@@ -274,6 +281,18 @@ async function syncVariants(prev: Record<string, ProductVariant[]>, next: Record
 export function InventoryProvider({ children }: { children: ReactNode }) {
   const useApi = isApiConfigured() && !!getToken();
   const isBulk = useRef(false);
+  /** In-flight writes to API — wait before refetch so MongoDB reflects PATCH/POST */
+  const syncDepthRef = useRef(0);
+  const tabIdRef = useRef(`tab-${Date.now()}-${Math.random().toString(36).slice(2, 11)}`);
+  const broadcastRef = useRef<BroadcastChannel | null>(null);
+
+  const postInventoryBroadcast = useCallback(() => {
+    try {
+      broadcastRef.current?.postMessage({ type: 'refresh', tabId: tabIdRef.current });
+    } catch {
+      /* ignore */
+    }
+  }, []);
 
   const [inventoryHydrating, setInventoryHydrating] = useState(useApi);
 
@@ -300,10 +319,15 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
     useApi ? [] : mockProductionOrders.map((o) => ({ ...o }))
   );
 
-  const refreshFromApi = useCallback(async () => {
+  const refreshFromApi = useCallback(async (options?: { quiet?: boolean }) => {
     if (!apiInventoryEnabled()) return;
+    const quiet = options?.quiet ?? false;
+    const deadline = Date.now() + 6000;
+    while (syncDepthRef.current > 0 && Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, 50));
+    }
     isBulk.current = true;
-    setInventoryHydrating(true);
+    if (!quiet) setInventoryHydrating(true);
     try {
       const [
         p,
@@ -362,26 +386,97 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
       }
     } finally {
       isBulk.current = false;
-      setInventoryHydrating(false);
+      if (!quiet) setInventoryHydrating(false);
     }
   }, []);
 
   useEffect(() => {
-    if (apiInventoryEnabled()) void refreshFromApi();
+    if (apiInventoryEnabled()) void refreshFromApi({ quiet: false });
     else setInventoryHydrating(false);
   }, [refreshFromApi]);
+
+  const tabWasHidden = useRef(false);
+  useEffect(() => {
+    if (!isApiConfigured()) return;
+    const onVis = () => {
+      if (document.visibilityState === 'hidden') {
+        tabWasHidden.current = true;
+        return;
+      }
+      if (document.visibilityState === 'visible' && tabWasHidden.current && apiInventoryEnabled()) {
+        tabWasHidden.current = false;
+        void refreshFromApi({ quiet: true });
+      }
+    };
+    document.addEventListener('visibilitychange', onVis);
+    return () => document.removeEventListener('visibilitychange', onVis);
+  }, [refreshFromApi]);
+
+  useEffect(() => {
+    if (!apiInventoryEnabled() || typeof BroadcastChannel === 'undefined') return;
+    const ch = new BroadcastChannel(INVENTORY_BROADCAST);
+    broadcastRef.current = ch;
+    let debounce: ReturnType<typeof setTimeout> | null = null;
+    const onMsg = (ev: MessageEvent) => {
+      const d = ev.data as { type?: string; tabId?: string } | undefined;
+      if (d?.type !== 'refresh' || typeof d.tabId !== 'string') return;
+      if (d.tabId === tabIdRef.current) return;
+      if (!apiInventoryEnabled()) return;
+      if (debounce) clearTimeout(debounce);
+      debounce = setTimeout(() => void refreshFromApi({ quiet: true }), 320);
+    };
+    ch.addEventListener('message', onMsg);
+    return () => {
+      if (debounce) clearTimeout(debounce);
+      ch.removeEventListener('message', onMsg);
+      ch.close();
+      broadcastRef.current = null;
+    };
+  }, [refreshFromApi]);
+
+  useEffect(() => {
+    if (!isApiConfigured()) return;
+    const id = window.setInterval(() => {
+      if (document.visibilityState !== 'visible') return;
+      if (!apiInventoryEnabled()) return;
+      void refreshFromApi({ quiet: true });
+    }, INVENTORY_POLL_MS);
+    return () => window.clearInterval(id);
+  }, [refreshFromApi]);
+
+  const runSyncedList = useCallback(
+    <T extends { id: string }>(
+      apiPath: string,
+      prev: T[],
+      next: T[],
+      sanitize: (x: T) => Record<string, unknown>,
+      label: string
+    ) => {
+      syncDepthRef.current++;
+      void syncIdList(apiPath, prev, next, sanitize)
+        .catch((err: unknown) => {
+          console.error(`${label} sync`, err);
+          void refreshFromApi({ quiet: true });
+        })
+        .finally(() => {
+          syncDepthRef.current = Math.max(0, syncDepthRef.current - 1);
+          postInventoryBroadcast();
+        });
+    },
+    [refreshFromApi, postInventoryBroadcast]
+  );
 
   const setProducts = useCallback(
     (updater: React.SetStateAction<Product[]>) => {
       setProductsInternal((prev) => {
         const next = typeof updater === 'function' ? (updater as (p: Product[]) => Product[])(prev) : updater;
         if (apiInventoryEnabled() && !isBulk.current) {
-          void syncIdList('/api/products', prev, next, sProduct).catch((err) => console.error('Product sync', err));
+          runSyncedList('/api/products', prev, next, sProduct, 'Product');
         }
         return next;
       });
     },
-    []
+    [runSyncedList]
   );
 
   const setRawMaterials = useCallback((updater: React.SetStateAction<BOMItem[]>) => {
@@ -394,34 +489,40 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
     setOrdersInternal((prev) => {
       const next = typeof updater === 'function' ? (updater as (p: Order[]) => Order[])(prev) : updater;
       if (apiInventoryEnabled() && !isBulk.current) {
-        void syncIdList('/api/orders', prev, next, sOrder).catch((err) => console.error('Order sync', err));
+        runSyncedList('/api/orders', prev, next, sOrder, 'Order');
       }
       return next;
     });
-  }, []);
+  }, [runSyncedList]);
 
   const setPurchaseOrders = useCallback((updater: React.SetStateAction<PurchaseOrder[]>) => {
     setPurchaseOrdersInternal((prev) => {
       const next = typeof updater === 'function' ? (updater as (p: PurchaseOrder[]) => PurchaseOrder[])(prev) : updater;
       if (apiInventoryEnabled() && !isBulk.current) {
-        void syncIdList('/api/purchase-orders', prev, next, sPO).catch((err) => console.error('PO sync', err));
+        runSyncedList('/api/purchase-orders', prev, next, sPO, 'PO');
       }
       return next;
     });
-  }, []);
+  }, [runSyncedList]);
 
   const setCustomers = useCallback((updater: React.SetStateAction<Customer[]>) => {
     setCustomersInternal((prev) => {
       const next = typeof updater === 'function' ? (updater as (p: Customer[]) => Customer[])(prev) : updater;
       // Do not gate on isBulk: bulk hydrate uses setCustomersInternal directly, never this wrapper
       if (apiInventoryEnabled()) {
-        void syncIdList('/api/customers', prev, next, sCustomer).catch((err) => console.error('Customer sync', err));
+        runSyncedList('/api/customers', prev, next, sCustomer, 'Customer');
       }
       return next;
     });
-  }, []);
+  }, [runSyncedList]);
 
   const createCustomer = useCallback(async (fields: Omit<Customer, 'id'>) => {
+    const emailNorm = (fields.email || '').trim().toLowerCase();
+    if (emailNorm) {
+      const dup = customers.some((c) => (c.email || '').trim().toLowerCase() === emailNorm);
+      if (dup) return { ok: false as const, error: 'A customer with this email already exists' };
+    }
+
     let created!: Customer;
     flushSync(() => {
       setCustomersInternal((prev) => {
@@ -432,59 +533,81 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
     });
 
     if (apiInventoryEnabled()) {
+      syncDepthRef.current++;
       try {
         await apiJson('POST', '/api/customers', sCustomer(created));
+        postInventoryBroadcast();
       } catch (e) {
         flushSync(() => {
           setCustomersInternal((prev) => prev.filter((c) => c.id !== created.id));
         });
         const msg = e instanceof ApiError ? e.message : 'Failed to save customer';
         return { ok: false as const, error: msg };
+      } finally {
+        syncDepthRef.current = Math.max(0, syncDepthRef.current - 1);
       }
     }
 
     return { ok: true as const, customer: created };
-  }, []);
+  }, [customers, postInventoryBroadcast]);
 
   const setReturns = useCallback((updater: React.SetStateAction<ReturnRequest[]>) => {
     setReturnsInternal((prev) => {
       const next = typeof updater === 'function' ? (updater as (p: ReturnRequest[]) => ReturnRequest[])(prev) : updater;
       if (apiInventoryEnabled() && !isBulk.current) {
-        void syncIdList('/api/returns', prev, next, sReturn).catch((err) => console.error('Return sync', err));
+        runSyncedList('/api/returns', prev, next, sReturn, 'Return');
       }
       return next;
     });
-  }, []);
+  }, [runSyncedList]);
 
   const setQuotations = useCallback((updater: React.SetStateAction<Quotation[]>) => {
     setQuotationsInternal((prev) => {
       const next = typeof updater === 'function' ? (updater as (p: Quotation[]) => Quotation[])(prev) : updater;
       if (apiInventoryEnabled() && !isBulk.current) {
-        void syncIdList('/api/quotations', prev, next, sQuote).catch((err) => console.error('Quotation sync', err));
+        runSyncedList('/api/quotations', prev, next, sQuote, 'Quotation');
       }
       return next;
     });
-  }, []);
+  }, [runSyncedList]);
 
   const setQCChecklists = useCallback((updater: React.SetStateAction<QCChecklist[]>) => {
     setQCChecklistsInternal((prev) => {
       const next = typeof updater === 'function' ? (updater as (p: QCChecklist[]) => QCChecklist[])(prev) : updater;
       if (apiInventoryEnabled() && !isBulk.current) {
-        void syncQcChecklists(prev, next).catch((err) => console.error('QC sync', err));
+        syncDepthRef.current++;
+        void syncQcChecklists(prev, next)
+          .catch((err) => {
+            console.error('QC sync', err);
+            void refreshFromApi({ quiet: true });
+          })
+          .finally(() => {
+            syncDepthRef.current = Math.max(0, syncDepthRef.current - 1);
+            postInventoryBroadcast();
+          });
       }
       return next;
     });
-  }, []);
+  }, [refreshFromApi, postInventoryBroadcast]);
 
   const setScheduledReport = useCallback((updater: React.SetStateAction<ScheduledReport | null>) => {
     setScheduledReportInternal((prev) => {
       const next = typeof updater === 'function' ? (updater as (p: ScheduledReport | null) => ScheduledReport | null)(prev) : updater;
       if (apiInventoryEnabled() && !isBulk.current) {
-        void apiJson('PUT', '/api/scheduled-report', next).catch((err) => console.error('Scheduled report sync', err));
+        syncDepthRef.current++;
+        void apiJson('PUT', '/api/scheduled-report', next)
+          .catch((err) => {
+            console.error('Scheduled report sync', err);
+            void refreshFromApi({ quiet: true });
+          })
+          .finally(() => {
+            syncDepthRef.current = Math.max(0, syncDepthRef.current - 1);
+            postInventoryBroadcast();
+          });
       }
       return next;
     });
-  }, []);
+  }, [refreshFromApi, postInventoryBroadcast]);
 
   const setProductVariants = useCallback((updater: React.SetStateAction<Record<string, ProductVariant[]>>) => {
     setProductVariantsInternal((prev) => {
@@ -493,21 +616,32 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
           ? (updater as (p: Record<string, ProductVariant[]>) => Record<string, ProductVariant[]>)(prev)
           : updater;
       if (apiInventoryEnabled() && !isBulk.current) {
-        void syncVariants(prev, next).catch((err) => console.error('Variants sync', err));
+        syncDepthRef.current++;
+        void syncVariants(prev, next)
+          .catch((err) => {
+            console.error('Variants sync', err);
+            void refreshFromApi({ quiet: true });
+          })
+          .finally(() => {
+            syncDepthRef.current = Math.max(0, syncDepthRef.current - 1);
+            postInventoryBroadcast();
+          });
       }
       return next;
     });
-  }, []);
+  }, [refreshFromApi, postInventoryBroadcast]);
+
+  const refreshInventoryLoud = useCallback(() => refreshFromApi({ quiet: false }), [refreshFromApi]);
 
   const setUsers = useCallback((updater: React.SetStateAction<User[]>) => {
     setUsersInternal((prev) => {
       const next = typeof updater === 'function' ? (updater as (p: User[]) => User[])(prev) : updater;
       if (apiInventoryEnabled() && !isBulk.current) {
-        void syncIdList('/api/users', prev, next, sUser).catch((err) => console.error('User sync', err));
+        runSyncedList('/api/users', prev, next, sUser, 'User');
       }
       return next;
     });
-  }, []);
+  }, [runSyncedList]);
 
   const setProductionOrders = useCallback((updater: React.SetStateAction<ProductionOrder[]>) => {
     setProductionOrdersInternal((prev) => {
@@ -516,13 +650,11 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
           ? (updater as (p: ProductionOrder[]) => ProductionOrder[])(prev)
           : updater;
       if (apiInventoryEnabled() && !isBulk.current) {
-        void syncIdList('/api/production-orders', prev, next, sProductionOrder).catch((err) =>
-          console.error('Production order sync', err)
-        );
+        runSyncedList('/api/production-orders', prev, next, sProductionOrder, 'Production order');
       }
       return next;
     });
-  }, []);
+  }, [runSyncedList]);
 
   const addLog = useCallback(
     (userName: string, action: string, details: string, meta?: { editDiff?: { old: string; new: string } }) => {
@@ -543,10 +675,12 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
     };
     setLogs((prev) => [log, ...prev]);
     if (apiInventoryEnabled()) {
-      void apiJson('POST', '/api/activity-logs', log).catch((err) => console.error('Activity log sync', err));
+      void apiJson('POST', '/api/activity-logs', log)
+        .then(() => postInventoryBroadcast())
+        .catch((err) => console.error('Activity log sync', err));
     }
   },
-  []);
+  [postInventoryBroadcast]);
 
   const getReservedStock = useCallback(
     (productId: string) => {
@@ -598,6 +732,7 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
         getReservedStock,
         getAvailableStock,
         inventoryHydrating,
+        refreshInventory: refreshInventoryLoud,
         rawMaterials,
         setRawMaterials,
         billsOfMaterials,

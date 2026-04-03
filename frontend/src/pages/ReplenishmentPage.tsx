@@ -10,7 +10,7 @@ import {
   SAFETY_STOCK_DAILY_MULTIPLIER,
 } from '@/lib/reorderPointOptimizer';
 import { generateHistory, forecastDemand, computeReplenishment, seasonalFactors, type ReplenishmentPlan } from '@/lib/manufacturingData';
-import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
+import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, Legend } from 'recharts';
 import {
   RefreshCw,
   TrendingUp,
@@ -251,7 +251,7 @@ export default function ReplenishmentPage() {
 
       {mainTab === 'replenishment' && (
       <>
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 lg:grid-cols-4">
         {summaryCards.map(c => {
           const Icon = c.icon; const isOpen = expandedCard === c.id;
           return (
@@ -288,7 +288,7 @@ export default function ReplenishmentPage() {
             <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
             <XAxis dataKey="month" stroke="hsl(var(--muted-foreground))" fontSize={12} />
             <YAxis stroke="hsl(var(--muted-foreground))" fontSize={12} />
-            <Tooltip contentStyle={{ background: 'hsl(var(--card))', border: '1px solid hsl(var(--border))', borderRadius: 8, color: 'hsl(var(--foreground))' }} />
+            <RechartsTooltip contentStyle={{ background: 'hsl(var(--card))', border: '1px solid hsl(var(--border))', borderRadius: 8, color: 'hsl(var(--foreground))' }} />
             <Legend />
             <Area type="monotone" dataKey="actual" stroke="hsl(var(--primary))" fill="hsl(var(--primary) / 0.3)" name="Actual Sales" strokeWidth={2} />
             <Area type="monotone" dataKey="upper" stroke="none" fill="hsl(var(--accent) / 0.15)" name="Upper Bound" />

@@ -9,7 +9,8 @@
     "seed": "node src/seed/runSeed.js",
     "db:up": "docker compose -f ../docker-compose.yml up -d",
     "db:down": "docker compose -f ../docker-compose.yml down",
-    "db:logs": "docker compose -f ../docker-compose.yml logs -f mongo"
+    "db:logs": "docker compose -f ../docker-compose.yml logs -f mongo",
+    "migrate:mongo": "node scripts/migrateMongo.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

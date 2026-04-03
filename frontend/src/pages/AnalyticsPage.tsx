@@ -102,6 +102,26 @@ export default function AnalyticsPage() {
     });
   }, [products, categories]);
 
+  const analyticsAreaKey = useMemo(
+    () => monthlySales.map((m) => `${m.month}:${m.revenue}:${m.profit}`).join('|'),
+    [monthlySales]
+  );
+  const analyticsPieKey = useMemo(
+    () => categoryRevenue.map((c) => `${c.name}:${c.value}`).join('|'),
+    [categoryRevenue]
+  );
+  const analyticsProfitKey = useMemo(
+    () => profitByProduct.map((p) => `${p.name}:${p.profit}:${p.revenue}`).join('|'),
+    [profitByProduct]
+  );
+  const analyticsTrendKey = useMemo(
+    () =>
+      weeklyTrends
+        .map((row) => categories.map((c) => `${String(row[c])}`).join(',') + String(row.week))
+        .join('|'),
+    [weeklyTrends, categories]
+  );
+
   const categoryColors = ['hsl(25, 95%, 53%)', 'hsl(165, 70%, 42%)', 'hsl(262, 60%, 55%)', 'hsl(340, 75%, 55%)', 'hsl(200, 80%, 50%)', 'hsl(45, 93%, 47%)', 'hsl(160, 40%, 50%)', 'hsl(0, 60%, 55%)'];
 
   // Fastest growing / declining
@@ -149,7 +169,7 @@ export default function AnalyticsPage() {
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <div className="bg-card rounded-xl p-5 border border-border">
               <h3 className="font-display font-semibold text-foreground mb-4">Monthly Revenue</h3>
-              <ResponsiveContainer width="100%" height={300}>
+              <ResponsiveContainer key={analyticsAreaKey} width="100%" height={300}>
                 <AreaChart data={monthlySales} margin={{ left: 4, right: 8 }}>
                   <defs><linearGradient id="revGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="hsl(var(--primary))" stopOpacity={0.3} /><stop offset="95%" stopColor="hsl(var(--primary))" stopOpacity={0} /></linearGradient></defs>
                   <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
@@ -167,7 +187,7 @@ export default function AnalyticsPage() {
             </div>
             <div className="bg-card rounded-xl p-5 border border-border">
               <h3 className="font-display font-semibold text-foreground mb-4">Category Revenue Distribution</h3>
-              <ResponsiveContainer width="100%" height={300}>
+              <ResponsiveContainer key={analyticsPieKey} width="100%" height={300}>
                 <PieChart><Pie data={categoryRevenue} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={100} innerRadius={55} paddingAngle={3}>{categoryRevenue.map((entry, i) => <Cell key={i} fill={entry.fill} />)}</Pie><Tooltip formatter={(v: number) => formatCurrency(v)} /></PieChart>
               </ResponsiveContainer>
               <div className="flex flex-wrap gap-2 mt-2 justify-center">
@@ -177,7 +197,7 @@ export default function AnalyticsPage() {
           </div>
           <div className="bg-card rounded-xl p-5 border border-border">
             <h3 className="font-display font-semibold text-foreground mb-4">Profit by Product (Last 30 Days)</h3>
-            <ResponsiveContainer width="100%" height={350}>
+            <ResponsiveContainer key={analyticsProfitKey} width="100%" height={350}>
               <BarChart data={profitByProduct} layout="vertical" margin={{ left: 20 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
                 <XAxis type="number" stroke="hsl(var(--muted-foreground))" fontSize={12} tickFormatter={v => `₹${(v / 1000).toFixed(0)}k`} />
@@ -249,7 +269,7 @@ export default function AnalyticsPage() {
           </div>
           <div className="bg-card border border-border rounded-xl p-5">
             <h3 className="font-display font-semibold text-foreground mb-4">Category Revenue Trends (Weekly)</h3>
-            <ResponsiveContainer width="100%" height={400}>
+            <ResponsiveContainer key={analyticsTrendKey} width="100%" height={400}>
               <LineChart data={weeklyTrends}>
                 <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
                 <XAxis dataKey="week" stroke="hsl(var(--muted-foreground))" fontSize={12} />

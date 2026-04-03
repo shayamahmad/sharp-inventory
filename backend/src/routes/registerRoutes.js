@@ -1,3 +1,4 @@
+import mongoose from 'mongoose';
 import bcrypt from 'bcryptjs';
 import { signToken } from '../middleware/auth.js';
 import {
@@ -32,7 +33,13 @@ export function registerPublicRoutes(app) {
   app.get(
     '/api/health',
     asyncHandler(async (req, res) => {
-      res.json({ ok: true, service: 'inveto-api' });
+      const ready = mongoose.connection.readyState === 1;
+      res.json({
+        ok: true,
+        service: 'inveron-api',
+        mongo: ready ? 'connected' : 'disconnected',
+        dbName: mongoose.connection.name || null,
+      });
     })
   );
 }
@@ -233,6 +240,24 @@ export function registerProtectedRoutes(router) {
       const body = req.body || {};
       if (!body.id) return res.status(400).json({ error: 'id required' });
       if (await Customer.findOne({ id: body.id })) return res.status(409).json({ error: 'Id exists' });
+      const emailNorm = String(body.email || '')
+        .trim()
+        .toLowerCase();
+      if (emailNorm) {
+        const dup = await Customer.findOne({
+          $expr: {
+            $eq: [
+              { $toLower: { $trim: { input: { $ifNull: ['$email', ''] } } } },
+              emailNorm,
+            ],
+          },
+        })
+          .select('id')
+          .lean();
+        if (dup) {
+          return res.status(409).json({ error: 'A customer with this email already exists' });
+        }
+      }
       const doc = await Customer.create(body);
       res.status(201).json(toClientDoc(doc));
     })

@@ -92,6 +92,19 @@ export function stripEntityMeta<T extends Record<string, unknown>>(row: T): Reco
   return rest;
 }
 
+/** Key-sorted JSON so server vs client object key order does not skip PATCH incorrectly. */
+export function stableStringify(value: unknown): string {
+  if (value === null || typeof value !== 'object') {
+    return JSON.stringify(value);
+  }
+  if (Array.isArray(value)) {
+    return `[${value.map((x) => stableStringify(x)).join(',')}]`;
+  }
+  const obj = value as Record<string, unknown>;
+  const keys = Object.keys(obj).sort();
+  return `{${keys.map((k) => JSON.stringify(k) + ':' + stableStringify(obj[k])).join(',')}}`;
+}
+
 export async function syncIdList<T extends { id: string }>(
   apiPath: string,
   prev: T[],
@@ -105,8 +118,8 @@ export async function syncIdList<T extends { id: string }>(
     if (!prevM.has(id)) {
       await apiJson('POST', apiPath, sanitize(item));
     } else {
-      const a = JSON.stringify(sanitize(prevM.get(id)!));
-      const b = JSON.stringify(sanitize(item));
+      const a = stableStringify(sanitize(prevM.get(id)!));
+      const b = stableStringify(sanitize(item));
       if (a !== b) {
         await apiJson('PATCH', `${apiPath}/${encodeURIComponent(id)}`, sanitize(item));
       }

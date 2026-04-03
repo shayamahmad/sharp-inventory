@@ -252,7 +252,7 @@ export default function ProductsPage() {
   return (
     <div className="space-y-5 animate-fade-in">
       {/* ABC Summary */}
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
         {(['A', 'B', 'C'] as const).map(grade => (
           <div key={grade} className="stat-card cursor-pointer" onClick={() => setAbcFilter(abcFilter === grade ? 'All' : grade)}>
             <div className="flex items-center justify-between">

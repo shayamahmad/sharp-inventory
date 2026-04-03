@@ -127,10 +127,10 @@ export default function CommandCenterOverlay({
   const dashOffset = 100 - snapshot.health.total;
 
   return (
-    <div className="fixed inset-0 z-[300] bg-slate-950 text-slate-100 flex flex-col p-6 md:p-10 overflow-auto">
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-3xl font-display font-bold tracking-tight">Executive command center</h1>
-        <div className="flex items-center gap-4">
+    <div className="fixed inset-0 z-[300] flex flex-col overflow-auto bg-slate-950 p-4 text-slate-100 sm:p-6 md:p-10">
+      <div className="mb-4 flex flex-col gap-4 sm:mb-6 sm:flex-row sm:items-center sm:justify-between">
+        <h1 className="text-xl font-display font-bold tracking-tight sm:text-2xl md:text-3xl">Executive command center</h1>
+        <div className="flex shrink-0 items-center justify-between gap-3 sm:justify-end sm:gap-4">
           <span className="flex items-center gap-2 text-lg">
             <span className="relative flex h-3 w-3">
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
