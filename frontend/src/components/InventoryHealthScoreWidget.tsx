@@ -72,8 +72,8 @@ export default function InventoryHealthScoreWidget() {
         </div>
       </div>
 
-      <div className="px-5 pb-5 flex flex-col lg:flex-row gap-8 lg:gap-10">
-        <div className="flex flex-col items-center shrink-0 mx-auto lg:mx-0">
+      <div className="px-5 pb-5 flex flex-col gap-8 items-stretch">
+        <div className="flex flex-col items-center shrink-0 mx-auto">
           <div className="relative w-[220px] h-[130px]">
             <svg viewBox="0 0 200 120" className="w-full h-full" aria-hidden>
               <path
