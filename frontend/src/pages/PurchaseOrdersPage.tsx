@@ -1,11 +1,26 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useInventory } from '@/contexts/InventoryContext';
 import { formatCurrency } from '@/lib/mockData';
+import { buildSupplierProfiles } from '@/lib/supplierNegotiation';
 import { nextPrefixedId } from '@/lib/ids';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Search, Plus, X, ChevronDown, ChevronUp, AlertTriangle, Truck, Package, CheckCircle } from 'lucide-react';
+import {
+  Search,
+  Plus,
+  X,
+  ChevronDown,
+  ChevronUp,
+  AlertTriangle,
+  Truck,
+  Building2,
+  Sparkles,
+  Copy,
+  TrendingUp,
+  TrendingDown,
+  Minus,
+} from 'lucide-react';
 
 const statusColors: Record<string, string> = {
   Draft: 'bg-muted text-muted-foreground',
@@ -22,12 +37,19 @@ type POFlowStatus = (typeof statusFlow)[number];
 export default function PurchaseOrdersPage() {
   const { hasPermission, user } = useAuth();
   const { purchaseOrders, setPurchaseOrders, products, setProducts, addLog } = useInventory();
+  const [mainTab, setMainTab] = useState<'orders' | 'suppliers'>('orders');
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('All');
   const [expanded, setExpanded] = useState<string | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
   const [showGRN, setShowGRN] = useState<string | null>(null);
   const [grnQty, setGrnQty] = useState(0);
+  const [copiedSupplier, setCopiedSupplier] = useState<string | null>(null);
+
+  const supplierProfiles = useMemo(
+    () => buildSupplierProfiles(purchaseOrders, products),
+    [purchaseOrders, products]
+  );
 
   // New PO form
   const [newPO, setNewPO] = useState({ supplier: '', productId: '', quantity: 0, expectedDelivery: '' });
@@ -107,8 +129,121 @@ export default function PurchaseOrdersPage() {
 
   const uniqueSuppliers = [...new Set(purchaseOrders.map(po => po.supplier))];
 
+  const copyBrief = async (plain: string, supplierKey: string) => {
+    try {
+      await navigator.clipboard.writeText(plain);
+      setCopiedSupplier(supplierKey);
+      window.setTimeout(() => setCopiedSupplier(null), 2000);
+    } catch {
+      /* ignore */
+    }
+  };
+
   return (
     <div className="space-y-5 animate-fade-in">
+      <div className="flex gap-2 border-b border-border pb-0">
+        {[
+          { id: 'orders' as const, label: 'Purchase orders', icon: Truck },
+          { id: 'suppliers' as const, label: 'Suppliers', icon: Building2 },
+        ].map((tab) => {
+          const Icon = tab.icon;
+          return (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => setMainTab(tab.id)}
+              className={`flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition-colors -mb-px ${
+                mainTab === tab.id
+                  ? 'border-primary text-primary'
+                  : 'border-transparent text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              <Icon className="h-4 w-4" />
+              {tab.label}
+            </button>
+          );
+        })}
+      </div>
+
+      {mainTab === 'suppliers' && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+          {supplierProfiles.map((s) => {
+            const TrendIcon =
+              s.priceTrend === 'increasing' ? TrendingUp : s.priceTrend === 'decreasing' ? TrendingDown : Minus;
+            const trendCls =
+              s.priceTrend === 'increasing'
+                ? 'text-destructive'
+                : s.priceTrend === 'decreasing'
+                  ? 'text-success'
+                  : 'text-muted-foreground';
+            return (
+              <div key={s.supplier} className="bg-card border border-border rounded-xl overflow-hidden flex flex-col">
+                <div className="px-5 py-4 border-b border-border">
+                  <h3 className="font-display font-semibold text-foreground text-lg">{s.supplier}</h3>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mt-3 text-sm">
+                    <div>
+                      <p className="text-xs text-muted-foreground">POs placed</p>
+                      <p className="font-semibold text-foreground tabular-nums">{s.totalOrders}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-muted-foreground">Total spend</p>
+                      <p className="font-semibold text-foreground tabular-nums">{formatCurrency(s.totalSpend)}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-muted-foreground">Avg lead time</p>
+                      <p className="font-semibold text-foreground tabular-nums">
+                        {s.avgLeadTimeDays != null ? `${s.avgLeadTimeDays}d` : '—'}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-muted-foreground">On-time delivery</p>
+                      <p className="font-semibold text-foreground tabular-nums">
+                        {s.onTimePct != null ? `${s.onTimePct}%` : '—'}
+                      </p>
+                    </div>
+                    <div className="col-span-2 sm:col-span-2">
+                      <p className="text-xs text-muted-foreground">Price trend</p>
+                      <p className={`font-semibold flex items-center gap-1 ${trendCls}`}>
+                        <TrendIcon className="h-4 w-4" />
+                        {s.priceTrend.charAt(0).toUpperCase() + s.priceTrend.slice(1)}
+                      </p>
+                      <p className="text-xs text-muted-foreground mt-0.5">{s.trendNote}</p>
+                    </div>
+                  </div>
+                </div>
+                <div className="px-5 py-4 flex-1 flex flex-col bg-secondary/20">
+                  <div className="flex items-center justify-between gap-2 mb-2">
+                    <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground flex items-center gap-1.5">
+                      <Sparkles className="h-3.5 w-3.5 text-primary" />
+                      Negotiation brief
+                    </span>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="gap-1 h-8"
+                      onClick={() => copyBrief(s.briefPlainText, s.supplier)}
+                    >
+                      <Copy className="h-3.5 w-3.5" />
+                      {copiedSupplier === s.supplier ? 'Copied' : 'Copy brief'}
+                    </Button>
+                  </div>
+                  <ul className="text-sm text-foreground space-y-2 list-disc pl-4 border border-border/60 rounded-lg bg-card/80 p-4">
+                    {s.briefBullets.map((b, i) => (
+                      <li key={i} className="leading-snug">
+                        {b}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {mainTab === 'orders' && (
+      <>
       {/* Supplier Lead Time Summary */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         {uniqueSuppliers.slice(0, 4).map(supplier => {
@@ -190,6 +325,8 @@ export default function PurchaseOrdersPage() {
         })}
         {filtered.length === 0 && <div className="bg-card border border-border rounded-xl p-12 text-center text-muted-foreground">No purchase orders found.</div>}
       </div>
+      </>
+      )}
 
       {/* Add PO Modal */}
       {showAddModal && (

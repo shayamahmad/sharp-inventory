@@ -1,6 +1,6 @@
 import React from 'react';
 import { useAuth } from '@/contexts/AuthContext';
-import { LayoutDashboard, ShoppingCart, Boxes, Bell, Users, Activity, Brain, TrendingUp, LogOut, RefreshCw, Factory, Truck, UserCheck, FileText, ClipboardList } from 'lucide-react';
+import { LayoutDashboard, ShoppingCart, Boxes, Bell, Users, Activity, Brain, TrendingUp, LogOut, RefreshCw, Factory, Truck, UserCheck, FileText, ClipboardList, Wallet } from 'lucide-react';
 import invetoLogo from '@/assets/inveto-logo.png';
 
 interface AppSidebarProps {
@@ -16,6 +16,7 @@ const navItems = [
   { id: 'purchaseOrders', label: 'Purchase Orders', icon: Truck },
   { id: 'quotations', label: 'Quotations', icon: FileText },
   { id: 'analytics', label: 'Analytics', icon: TrendingUp },
+  { id: 'cashFlow', label: 'Cash Flow', icon: Wallet },
   { id: 'predictions', label: 'AI Predictions', icon: Brain },
   { id: 'replenishment', label: 'Replenishment', icon: RefreshCw },
   { id: 'manufacturing', label: 'Manufacturing', icon: Factory },

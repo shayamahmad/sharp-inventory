@@ -2,6 +2,8 @@ import React, { useState, useMemo } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useInventory } from '@/contexts/InventoryContext';
 import { formatCurrency } from '@/lib/mockData';
+import { analyzeBomProductionCost } from '@/lib/bomCostAnalysis';
+import { isApiConfigured, getToken, apiJson } from '@/lib/api';
 import { Factory, Layers, Boxes, ChevronDown, ChevronUp, AlertTriangle, CheckCircle, Clock, Play, ClipboardCheck, TrendingUp } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -18,6 +20,7 @@ export default function ManufacturingPage() {
     qcChecklists,
     setQCChecklists,
     rawMaterials,
+    setRawMaterials,
     billsOfMaterials,
     productionOrders,
     setProductionOrders,
@@ -54,6 +57,20 @@ export default function ManufacturingPage() {
     const existing = qcChecklists.find(q => q.productionOrderId === orderId);
     setQcState(existing ? [...existing.items] : qcItems.map(name => ({ name, passed: null, note: '' })));
     setShowQC(orderId);
+  };
+
+  const commitMaterialUnitCost = (materialId: string, value: string) => {
+    const v = Number(value);
+    if (!Number.isFinite(v) || v < 0) return;
+    const prevRow = rawMaterials.find((r) => r.materialId === materialId);
+    if (!prevRow || prevRow.costPerUnit === v) return;
+    setRawMaterials((prev) => prev.map((x) => (x.materialId === materialId ? { ...x, costPerUnit: v } : x)));
+    if (isApiConfigured() && getToken()) {
+      void apiJson('PATCH', `/api/raw-materials/${encodeURIComponent(materialId)}`, { costPerUnit: v }).catch((err) =>
+        console.error('Raw material PATCH', err)
+      );
+    }
+    addLog(user?.name || 'System', 'Raw material cost', `${prevRow.materialName}: ${formatCurrency(prevRow.costPerUnit)} → ${formatCurrency(v)}`);
   };
 
   const submitQC = () => {
@@ -149,20 +166,28 @@ export default function ManufacturingPage() {
 
       {activeTab === 'bom' && (
         <div className="space-y-3">
-          {billsOfMaterials.map(bom => {
+          {billsOfMaterials.map((bom) => {
             const expanded = expandedBOM === bom.productId;
             const sellingPrice = products.find((p) => p.id === bom.productId)?.price ?? 0;
-            const productionMargin = sellingPrice > 0 ? ((sellingPrice - bom.totalCostPerUnit) / sellingPrice) * 100 : 0;
+            const analysis = analyzeBomProductionCost(bom, rawMaterials, sellingPrice);
+            const { materialsResolved, componentCostPerUnit, allocatedLaborOverheadPerUnit, totalProductionCostPerUnit, grossMarginInr, grossMarginPct, marginBand } = analysis;
+            const marginColor =
+              marginBand === 'high' ? 'text-success' : marginBand === 'mid' ? 'text-warning' : 'text-destructive';
+            const marginBg =
+              marginBand === 'high' ? 'bg-success/15 text-success border-success/30' : marginBand === 'mid' ? 'bg-warning/15 text-warning border-warning/30' : 'bg-destructive/15 text-destructive border-destructive/30';
             return (
               <div key={bom.productId} className="bg-card border border-border rounded-xl overflow-hidden">
                 <button onClick={() => setExpandedBOM(expanded ? null : bom.productId)} className="w-full flex items-center justify-between p-4 hover:bg-secondary/30 transition-colors text-left">
                   <div>
                     <h4 className="font-medium text-foreground">{bom.productName}</h4>
-                    <p className="text-xs text-muted-foreground mt-0.5">{bom.materials.length} materials · Batch: {bom.outputPerBatch} units · Cost/unit: {formatCurrency(bom.totalCostPerUnit)}</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      {bom.materials.length} materials · Batch: {bom.outputPerBatch} units · Live cost/unit:{' '}
+                      {formatCurrency(totalProductionCostPerUnit)}
+                    </p>
                   </div>
                   <div className="flex items-center gap-3">
-                    <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${productionMargin > 40 ? 'bg-success/15 text-success' : productionMargin > 20 ? 'bg-warning/15 text-warning' : 'bg-destructive/15 text-destructive'}`}>{productionMargin.toFixed(1)}% margin</span>
-                    <span className="text-sm font-semibold text-foreground">{formatCurrency(bom.totalMaterialCost)}</span>
+                    <span className={`text-xs px-2 py-0.5 rounded-full font-medium border ${marginBg}`}>{grossMarginPct.toFixed(1)}% margin</span>
+                    <span className="text-sm font-semibold text-foreground">{formatCurrency(componentCostPerUnit)} mat.</span>
                     {expanded ? <ChevronUp className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
                   </div>
                 </button>
@@ -178,34 +203,66 @@ export default function ManufacturingPage() {
                         <th className="px-4 py-2 text-center text-xs font-semibold text-muted-foreground uppercase">Can Produce</th>
                       </tr></thead>
                       <tbody>
-                        {bom.materials.map(m => {
+                        {materialsResolved.map((m) => {
                           const canProduce = Math.floor(m.currentStock / m.quantityPerUnit);
                           const lowStock = m.currentStock <= m.minStock;
+                          const line = m.quantityPerUnit * m.costPerUnit;
                           return (
                             <tr key={m.materialId} className="border-b border-border/50">
                               <td className="px-4 py-2.5 text-sm text-foreground">{m.materialName}</td>
                               <td className="px-4 py-2.5 text-sm text-center text-foreground">{m.quantityPerUnit} {m.unit}</td>
                               <td className="px-4 py-2.5 text-sm text-center text-foreground">{formatCurrency(m.costPerUnit)}</td>
-                              <td className="px-4 py-2.5 text-sm text-center text-foreground">{formatCurrency(m.quantityPerUnit * m.costPerUnit)}</td>
+                              <td className="px-4 py-2.5 text-sm text-center text-foreground">{formatCurrency(line)}</td>
                               <td className={`px-4 py-2.5 text-sm text-center ${lowStock ? 'text-destructive font-semibold' : 'text-foreground'}`}>{m.currentStock} {m.unit}</td>
                               <td className="px-4 py-2.5 text-sm text-center font-medium text-foreground">{canProduce} units</td>
                             </tr>
                           );
                         })}
                       </tbody>
-                      <tfoot>
-                        <tr className="bg-secondary/30">
-                          <td colSpan={3} className="px-4 py-2.5 text-sm font-semibold text-foreground">Production Cost Summary</td>
-                          <td className="px-4 py-2.5 text-sm text-center font-bold text-foreground">{formatCurrency(bom.totalMaterialCost)}</td>
+                      <tfoot className="border-t-2 border-border bg-muted/40 sticky bottom-0">
+                        <tr>
+                          <td colSpan={3} className="px-4 py-2.5 text-sm font-bold text-foreground">Cost summary — components / unit</td>
+                          <td className="px-4 py-2.5 text-sm text-center font-bold text-foreground tabular-nums">{formatCurrency(componentCostPerUnit)}</td>
+                          <td colSpan={2} className="px-4 py-2.5 text-xs text-muted-foreground">Uses live raw material costs</td>
+                        </tr>
+                        <tr>
+                          <td colSpan={3} className="px-4 py-2 text-sm font-semibold text-foreground">Labor + overhead / unit</td>
+                          <td className="px-4 py-2 text-sm text-center font-semibold text-foreground tabular-nums">{formatCurrency(allocatedLaborOverheadPerUnit)}</td>
+                          <td colSpan={2} className="px-4 py-2 text-xs text-muted-foreground">({formatCurrency(bom.laborCostPerBatch)} + {formatCurrency(bom.overheadPerBatch)}) ÷ {bom.outputPerBatch}</td>
+                        </tr>
+                        <tr>
+                          <td colSpan={3} className="px-4 py-2.5 text-sm font-bold text-foreground">Total production cost / unit</td>
+                          <td className="px-4 py-2.5 text-sm text-center font-bold text-primary tabular-nums">{formatCurrency(totalProductionCostPerUnit)}</td>
                           <td colSpan={2} />
                         </tr>
-                        <tr className="bg-secondary/30">
-                          <td className="px-4 py-2 text-xs text-muted-foreground" colSpan={6}>
-                            Labor: {formatCurrency(bom.laborCostPerBatch)}/batch · Overhead: {formatCurrency(bom.overheadPerBatch)}/batch · <strong className="text-foreground">Cost/unit: {formatCurrency(bom.totalCostPerUnit)}</strong> · Selling: {formatCurrency(sellingPrice)} · <strong className={productionMargin > 30 ? 'text-success' : 'text-destructive'}>Margin: {formatCurrency(sellingPrice - bom.totalCostPerUnit)} ({productionMargin.toFixed(1)}%)</strong>
+                        <tr>
+                          <td colSpan={3} className="px-4 py-2 text-sm font-semibold text-foreground">Selling price (product)</td>
+                          <td className="px-4 py-2 text-sm text-center font-semibold text-foreground tabular-nums">{formatCurrency(sellingPrice)}</td>
+                          <td colSpan={2} />
+                        </tr>
+                        <tr>
+                          <td colSpan={3} className="px-4 py-2.5 text-sm font-bold text-foreground">Gross production margin</td>
+                          <td className={`px-4 py-2.5 text-sm text-center font-bold tabular-nums ${marginColor}`}>
+                            {formatCurrency(grossMarginInr)} ({grossMarginPct.toFixed(1)}%)
                           </td>
+                          <td colSpan={2} />
                         </tr>
                       </tfoot>
                     </table>
+                    <div className="px-4 py-4 border-t border-border bg-secondary/25 space-y-2">
+                      <h5 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Cost analysis</h5>
+                      <p className="text-sm text-foreground">
+                        Component cost per finished unit is{' '}
+                        <span className="font-semibold tabular-nums">{formatCurrency(componentCostPerUnit)}</span> (Σ qty × live raw cost). With allocated labor and overhead, total production cost is{' '}
+                        <span className="font-semibold tabular-nums">{formatCurrency(totalProductionCostPerUnit)}</span> vs selling price{' '}
+                        <span className="font-semibold tabular-nums">{formatCurrency(sellingPrice)}</span>.
+                        Gross margin is{' '}
+                        <span className={`font-semibold tabular-nums ${marginColor}`}>
+                          {formatCurrency(grossMarginInr)} ({grossMarginPct.toFixed(1)}%)
+                        </span>
+                        {marginBand === 'high' ? ' — healthy vs 30% target.' : marginBand === 'mid' ? ' — monitor pricing and material costs.' : ' — review BOM, pricing, or suppliers urgently.'}
+                      </p>
+                    </div>
                   </div>
                 )}
               </div>
@@ -251,7 +308,21 @@ export default function ManufacturingPage() {
                       <td className="px-4 py-3 text-sm font-medium text-foreground">{m.materialName}</td>
                       <td className={`px-4 py-3 text-sm text-center ${low ? 'text-destructive font-semibold' : 'text-foreground'}`}>{m.currentStock} {m.unit}</td>
                       <td className="px-4 py-3 text-sm text-center text-muted-foreground">{m.minStock}</td>
-                      <td className="px-4 py-3 text-sm text-center text-foreground">{formatCurrency(m.costPerUnit)}</td>
+                      <td className="px-4 py-3 text-sm text-center text-foreground">
+                        {hasPermission('edit') ? (
+                          <Input
+                            key={`${m.materialId}-${m.costPerUnit}`}
+                            type="number"
+                            min={0}
+                            step={0.01}
+                            defaultValue={m.costPerUnit}
+                            className="h-8 w-28 text-right mx-auto text-sm tabular-nums"
+                            onBlur={(e) => commitMaterialUnitCost(m.materialId, e.target.value)}
+                          />
+                        ) : (
+                          formatCurrency(m.costPerUnit)
+                        )}
+                      </td>
                       <td className="px-4 py-3 text-sm text-foreground">{m.supplier}</td>
                       <td className="px-4 py-3 text-sm text-center text-foreground">{m.leadTimeDays}d</td>
                       <td className="px-4 py-3 text-center"><span className={`inline-block px-2 py-1 rounded-full text-xs font-semibold ${low ? 'bg-destructive/15 text-destructive' : 'bg-success/15 text-success'}`}>{low ? 'Low' : 'OK'}</span></td>

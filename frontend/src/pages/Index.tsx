@@ -18,6 +18,7 @@ import UsersPage from './UsersPage';
 import PurchaseOrdersPage from './PurchaseOrdersPage';
 import CustomersPage from './CustomersPage';
 import QuotationsPage from './QuotationsPage';
+import CashFlowPage from './CashFlowPage';
 
 const pageTitles: Record<string, { title: string; subtitle: string }> = {
   dashboard: { title: 'Dashboard', subtitle: 'Overview of your inventory and sales' },
@@ -27,6 +28,7 @@ const pageTitles: Record<string, { title: string; subtitle: string }> = {
   purchaseOrders: { title: 'Purchase Orders', subtitle: 'Manage supplier purchase orders & GRN' },
   quotations: { title: 'Quotations', subtitle: 'Manage quotations & proforma invoices' },
   analytics: { title: 'Analytics', subtitle: 'Revenue, profit, aging & margin insights' },
+  cashFlow: { title: 'Cash Flow', subtitle: 'AI projected inflows, outflows & liquidity' },
   predictions: { title: 'AI Predictions', subtitle: 'Smart restock & demand forecasting' },
   replenishment: { title: 'Intelligent Replenishment', subtitle: 'Demand forecasting & auto-reorder planning' },
   manufacturing: { title: 'Manufacturing Hub', subtitle: 'Production planning, BOM & raw materials' },
@@ -68,6 +70,7 @@ function InventoryShell({
           {currentPage === 'purchaseOrders' && <PurchaseOrdersPage />}
           {currentPage === 'quotations' && <QuotationsPage />}
           {currentPage === 'analytics' && <AnalyticsPage />}
+          {currentPage === 'cashFlow' && <CashFlowPage />}
           {currentPage === 'predictions' && <PredictionsPage />}
           {currentPage === 'replenishment' && <ReplenishmentPage />}
           {currentPage === 'manufacturing' && <ManufacturingPage />}

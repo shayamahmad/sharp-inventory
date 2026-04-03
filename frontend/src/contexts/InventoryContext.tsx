@@ -155,6 +155,7 @@ interface InventoryContextType {
   /** True while first load from API is in progress */
   inventoryHydrating: boolean;
   rawMaterials: BOMItem[];
+  setRawMaterials: React.Dispatch<React.SetStateAction<BOMItem[]>>;
   billsOfMaterials: BillOfMaterials[];
   productionOrders: ProductionOrder[];
   setProductionOrders: React.Dispatch<React.SetStateAction<ProductionOrder[]>>;
@@ -367,6 +368,12 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
     []
   );
 
+  const setRawMaterials = useCallback((updater: React.SetStateAction<BOMItem[]>) => {
+    setRawMaterialsInternal((prev) =>
+      typeof updater === 'function' ? (updater as (p: BOMItem[]) => BOMItem[])(prev) : updater
+    );
+  }, []);
+
   const setOrders = useCallback((updater: React.SetStateAction<Order[]>) => {
     setOrdersInternal((prev) => {
       const next = typeof updater === 'function' ? (updater as (p: Order[]) => Order[])(prev) : updater;
@@ -573,6 +580,7 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
         getAvailableStock,
         inventoryHydrating,
         rawMaterials,
+        setRawMaterials,
         billsOfMaterials,
         productionOrders,
         setProductionOrders,
