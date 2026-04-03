@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useInventory } from '@/contexts/InventoryContext';
 import { formatCurrency } from '@/lib/mockData';
@@ -50,6 +50,18 @@ export default function PurchaseOrdersPage() {
     () => buildSupplierProfiles(purchaseOrders, products),
     [purchaseOrders, products]
   );
+
+  useEffect(() => {
+    const open = () => {
+      if (sessionStorage.getItem('inveto:openPO') === '1') {
+        sessionStorage.removeItem('inveto:openPO');
+        setShowAddModal(true);
+      }
+    };
+    open();
+    window.addEventListener('inveto:nav-intent', open);
+    return () => window.removeEventListener('inveto:nav-intent', open);
+  }, []);
 
   // New PO form
   const [newPO, setNewPO] = useState({ supplier: '', productId: '', quantity: 0, expectedDelivery: '' });

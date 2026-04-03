@@ -1,10 +1,11 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useInventory } from '@/contexts/InventoryContext';
 import { formatCurrency } from '@/lib/mockData';
 import { analyzeBomProductionCost } from '@/lib/bomCostAnalysis';
 import { isApiConfigured, getToken, apiJson } from '@/lib/api';
-import { Factory, Layers, Boxes, ChevronDown, ChevronUp, AlertTriangle, CheckCircle, Clock, Play, ClipboardCheck, TrendingUp } from 'lucide-react';
+import { buildMaterialForecastFromProduction, materialForecastSummary } from '@/lib/materialForecast';
+import { Factory, Layers, Boxes, ChevronDown, ChevronUp, AlertTriangle, CheckCircle, Clock, Play, ClipboardCheck, TrendingUp, ArrowUpDown } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 
@@ -12,13 +13,27 @@ const statusStyles: Record<string, string> = { Planned: 'bg-muted text-muted-for
 const priorityStyles: Record<string, string> = { Low: 'text-muted-foreground', Medium: 'text-foreground', High: 'text-warning font-semibold', Urgent: 'text-destructive font-bold' };
 const statusIcons: Record<string, React.ElementType> = { Planned: Clock, 'In Progress': Play, 'Quality Check': AlertTriangle, Completed: CheckCircle };
 
-const qcItems = ['Visual Inspection', 'Dimensions Check', 'Weight Check', 'Packaging', 'Labelling'];
+const QC_DEFS = [
+  'Visual Inspection',
+  'Dimensions Check',
+  'Weight Check',
+  'Packaging Integrity',
+  'Labelling Accuracy',
+] as const;
+
+type QCItemStatus = 'pass' | 'fail' | 'pending';
+
+interface QCRowState {
+  name: string;
+  status: QCItemStatus;
+  note: string;
+}
+
+type ForecastSortKey = 'materialName' | 'requiredQty' | 'currentStock' | 'shortfall' | 'daysUntilStockout' | 'status';
 
 export default function ManufacturingPage() {
   const {
     addLog,
-    qcChecklists,
-    setQCChecklists,
     rawMaterials,
     setRawMaterials,
     billsOfMaterials,
@@ -30,33 +45,81 @@ export default function ManufacturingPage() {
   const [activeTab, setActiveTab] = useState<'production' | 'bom' | 'materials' | 'forecast'>('production');
   const [expandedBOM, setExpandedBOM] = useState<string | null>(null);
   const [showQC, setShowQC] = useState<string | null>(null);
-  const [qcState, setQcState] = useState<{ name: string; passed: boolean | null; note: string }[]>([]);
+  const [qcState, setQcState] = useState<QCRowState[]>([]);
+  /** Local-only QC state per production order (Step 9) */
+  const [qcByOrder, setQcByOrder] = useState<Record<string, { items: QCRowState[] }>>({});
+  const [forecastSort, setForecastSort] = useState<{ key: ForecastSortKey; dir: 'asc' | 'desc' }>({
+    key: 'materialName',
+    dir: 'asc',
+  });
 
   const lowStockMaterials = rawMaterials.filter(m => m.currentStock <= m.minStock);
 
-  // Material Forecast
-  const materialForecast = useMemo(() => {
-    const activeProd = productionOrders.filter(o => o.status === 'Planned' || o.status === 'In Progress');
-    const materialNeeds = new Map<string, { name: string; required: number; current: number; unit: string }>();
-    activeProd.forEach(order => {
-      const bom = billsOfMaterials.find(b => b.productId === order.productId);
-      if (!bom) return;
-      bom.materials.forEach(m => {
-        const existing = materialNeeds.get(m.materialId) || { name: m.materialName, required: 0, current: m.currentStock, unit: m.unit };
-        existing.required += m.quantityPerUnit * order.batchSize;
-        materialNeeds.set(m.materialId, existing);
-      });
+  const forecastRowsRaw = useMemo(
+    () => buildMaterialForecastFromProduction(productionOrders, billsOfMaterials, rawMaterials),
+    [productionOrders, billsOfMaterials, rawMaterials]
+  );
+
+  const forecastSummary = useMemo(() => materialForecastSummary(forecastRowsRaw), [forecastRowsRaw]);
+
+  const forecastRowsSorted = useMemo(() => {
+    const rows = [...forecastRowsRaw];
+    const { key, dir } = forecastSort;
+    const mul = dir === 'asc' ? 1 : -1;
+    rows.sort((a, b) => {
+      if (key === 'materialName') {
+        return a.materialName.localeCompare(b.materialName) * mul;
+      }
+      if (key === 'status') {
+        const order = { Critical: 0, Warning: 1, Good: 2 };
+        return (order[a.status] - order[b.status]) * mul;
+      }
+      if (key === 'daysUntilStockout') {
+        const va = a.daysUntilStockout ?? 999999;
+        const vb = b.daysUntilStockout ?? 999999;
+        return (va - vb) * mul;
+      }
+      const va = a[key] as number;
+      const vb = b[key] as number;
+      return (va - vb) * mul;
     });
-    return Array.from(materialNeeds.entries()).map(([id, data]) => ({
-      id, ...data, shortfall: Math.max(0, data.required - data.current),
-      status: data.current >= data.required ? 'OK' : data.current >= data.required * 0.5 ? 'Low' : 'Critical',
-    }));
-  }, [productionOrders, billsOfMaterials]);
+    return rows;
+  }, [forecastRowsRaw, forecastSort]);
+
+  const toggleForecastSort = useCallback((key: ForecastSortKey) => {
+    setForecastSort((s) =>
+      s.key === key ? { key, dir: s.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: 'asc' }
+    );
+  }, []);
 
   const openQC = (orderId: string) => {
-    const existing = qcChecklists.find(q => q.productionOrderId === orderId);
-    setQcState(existing ? [...existing.items] : qcItems.map(name => ({ name, passed: null, note: '' })));
+    const saved = qcByOrder[orderId]?.items;
+    setQcState(
+      saved ??
+        QC_DEFS.map((name) => ({
+          name,
+          status: 'pending' as QCItemStatus,
+          note: '',
+        }))
+    );
     setShowQC(orderId);
+  };
+
+  const saveQCProgress = () => {
+    if (!showQC) return;
+    setQcByOrder((prev) => ({ ...prev, [showQC]: { items: qcState } }));
+    setShowQC(null);
+  };
+
+  const completeOrderAfterQC = () => {
+    if (!showQC) return;
+    if (!qcState.every((i) => i.status === 'pass')) return;
+    setQcByOrder((prev) => ({ ...prev, [showQC]: { items: qcState } }));
+    setProductionOrders((prev) =>
+      prev.map((o) => (o.id === showQC ? { ...o, status: 'Completed' as const, completionPercent: 100 } : o))
+    );
+    addLog(user?.name || 'System', 'QC Passed', `Production order ${showQC} completed after QC`);
+    setShowQC(null);
   };
 
   const commitMaterialUnitCost = (materialId: string, value: string) => {
@@ -71,22 +134,6 @@ export default function ManufacturingPage() {
       );
     }
     addLog(user?.name || 'System', 'Raw material cost', `${prevRow.materialName}: ${formatCurrency(prevRow.costPerUnit)} → ${formatCurrency(v)}`);
-  };
-
-  const submitQC = () => {
-    if (!showQC) return;
-    const allPassed = qcState.every(i => i.passed === true);
-    setQCChecklists(prev => {
-      const filtered = prev.filter(q => q.productionOrderId !== showQC);
-      return [...filtered, { productionOrderId: showQC, items: qcState, completedBy: user?.name, completedAt: new Date().toISOString() }];
-    });
-    if (allPassed) {
-      setProductionOrders(prev => prev.map(o => o.id === showQC ? { ...o, status: 'Completed' as const, completionPercent: 100 } : o));
-      addLog(user?.name || 'System', 'QC Passed', `Production order ${showQC} passed QC and marked Completed`);
-    } else {
-      addLog(user?.name || 'System', 'QC Failed', `Production order ${showQC} has QC failures`);
-    }
-    setShowQC(null);
   };
 
   const tabs = [
@@ -118,19 +165,26 @@ export default function ManufacturingPage() {
             <div className="space-y-3">
               {productionOrders.filter(o => o.status !== 'Completed').map(order => {
                 const SIcon = statusIcons[order.status];
-                const qc = qcChecklists.find(q => q.productionOrderId === order.id);
-                const qcPassed = qc && qc.items.every(i => i.passed === true);
-                const qcFailed = qc && qc.items.some(i => i.passed === false);
+                const qcItemsLocal = qcByOrder[order.id]?.items;
+                const qcPassed =
+                  !!qcItemsLocal &&
+                  qcItemsLocal.length === QC_DEFS.length &&
+                  qcItemsLocal.every((i) => i.status === 'pass');
+                const qcFailed = qcItemsLocal?.some((i) => i.status === 'fail');
+                const qcPending = qcItemsLocal?.some((i) => i.status === 'pending');
                 return (
                   <div key={order.id} className="flex items-center gap-4 p-3 rounded-lg bg-secondary/30 hover:bg-secondary/50 transition-colors">
                     <SIcon className={`h-5 w-5 shrink-0 ${order.status === 'In Progress' ? 'text-primary' : order.status === 'Quality Check' ? 'text-warning' : 'text-muted-foreground'}`} />
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center justify-between mb-1">
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 flex-wrap">
                           <span className="text-sm font-medium text-foreground truncate">{order.productName}</span>
                           <span className={`text-xs px-2 py-0.5 rounded-full ${statusStyles[order.status]}`}>{order.status}</span>
-                          {qcPassed && <span className="text-xs px-2 py-0.5 rounded-full bg-success/15 text-success">QC Passed ✓</span>}
-                          {qcFailed && <span className="text-xs px-2 py-0.5 rounded-full bg-destructive/15 text-destructive">QC Failed ✗</span>}
+                          {qcPassed && <span className="text-xs px-2 py-0.5 rounded-full bg-success/15 text-success border border-success/30">QC Passed</span>}
+                          {qcFailed && <span className="text-xs px-2 py-0.5 rounded-full bg-destructive/15 text-destructive">QC has failures</span>}
+                          {qcPending && !qcPassed && !qcFailed && (
+                            <span className="text-xs px-2 py-0.5 rounded-full bg-muted text-muted-foreground">QC pending</span>
+                          )}
                         </div>
                       </div>
                       <div className="flex items-center gap-3 text-xs text-muted-foreground">
@@ -140,11 +194,29 @@ export default function ManufacturingPage() {
                       <div className="flex justify-between mt-1 text-xs text-muted-foreground">
                         <span>{order.startDate}</span><span className="font-medium text-foreground">{order.completionPercent}%</span><span>{order.endDate}</span>
                       </div>
-                      {(order.status === 'Quality Check' || order.status === 'In Progress') && hasPermission('edit') && (
-                        <Button size="sm" variant="outline" className="mt-2 gap-1" onClick={() => openQC(order.id)}>
-                          <ClipboardCheck className="h-3 w-3" /> QC Checklist
-                        </Button>
-                      )}
+                      <div className="flex flex-wrap gap-2 mt-2">
+                        {hasPermission('edit') && (
+                          <Button size="sm" variant="outline" className="gap-1" onClick={() => openQC(order.id)}>
+                            <ClipboardCheck className="h-3 w-3" /> QC
+                          </Button>
+                        )}
+                        {hasPermission('edit') && qcPassed && (
+                          <Button
+                            size="sm"
+                            className="gap-1 bg-success text-success-foreground hover:bg-success/90"
+                            onClick={() => {
+                              setProductionOrders((prev) =>
+                                prev.map((o) =>
+                                  o.id === order.id ? { ...o, status: 'Completed' as const, completionPercent: 100 } : o
+                                )
+                              );
+                              addLog(user?.name || 'System', 'Production completed', `${order.id} marked Completed (QC passed)`);
+                            }}
+                          >
+                            <CheckCircle className="h-3 w-3" /> Mark completed
+                          </Button>
+                        )}
+                      </div>
                     </div>
                   </div>
                 );
@@ -337,59 +409,161 @@ export default function ManufacturingPage() {
 
       {activeTab === 'forecast' && (
         <div className="space-y-4">
-          <div className="grid grid-cols-3 gap-3">
-            <div className="stat-card"><p className="text-xs text-muted-foreground">Materials Tracked</p><p className="text-xl font-display font-bold text-foreground">{materialForecast.length}</p></div>
-            <div className="stat-card"><p className="text-xs text-muted-foreground">Shortfalls</p><p className="text-xl font-display font-bold text-destructive">{materialForecast.filter(m => m.status === 'Critical').length}</p></div>
-            <div className="stat-card"><p className="text-xs text-muted-foreground">Low Stock</p><p className="text-xl font-display font-bold text-warning">{materialForecast.filter(m => m.status === 'Low').length}</p></div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="stat-card border border-warning/30">
+              <p className="text-xs text-muted-foreground uppercase tracking-wide">Materials at risk</p>
+              <p className="text-3xl font-display font-bold text-warning mt-1 tabular-nums">{forecastSummary.atRiskCount}</p>
+              <p className="text-xs text-muted-foreground mt-1">Critical or warning vs planned production</p>
+            </div>
+            <div className="stat-card border border-destructive/30">
+              <p className="text-xs text-muted-foreground uppercase tracking-wide">Total shortfall value</p>
+              <p className="text-3xl font-display font-bold text-destructive mt-1 tabular-nums">
+                {formatCurrency(forecastSummary.totalShortfallValue)}
+              </p>
+              <p className="text-xs text-muted-foreground mt-1">Shortfall × current raw material unit cost</p>
+            </div>
           </div>
-          <div className="bg-card border border-border rounded-xl overflow-hidden">
-            <table className="w-full">
-              <thead><tr className="border-b border-border bg-secondary/50">
-                <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase">Material</th>
-                <th className="px-4 py-3 text-center text-xs font-semibold text-muted-foreground uppercase">Required</th>
-                <th className="px-4 py-3 text-center text-xs font-semibold text-muted-foreground uppercase">Current Stock</th>
-                <th className="px-4 py-3 text-center text-xs font-semibold text-muted-foreground uppercase">Shortfall</th>
-                <th className="px-4 py-3 text-center text-xs font-semibold text-muted-foreground uppercase">Status</th>
-              </tr></thead>
-              <tbody>{materialForecast.map(m => (
-                <tr key={m.id} className="border-b border-border/50 hover:bg-secondary/30 transition-colors">
-                  <td className="px-4 py-3 text-sm font-medium text-foreground">{m.name}</td>
-                  <td className="px-4 py-3 text-sm text-center text-foreground">{m.required.toFixed(0)} {m.unit}</td>
-                  <td className="px-4 py-3 text-sm text-center text-foreground">{m.current} {m.unit}</td>
-                  <td className={`px-4 py-3 text-sm text-center font-medium ${m.shortfall > 0 ? 'text-destructive' : 'text-success'}`}>{m.shortfall > 0 ? m.shortfall.toFixed(0) : '—'}</td>
-                  <td className="px-4 py-3 text-center"><span className={`text-xs px-2 py-0.5 rounded-full font-medium ${m.status === 'Critical' ? 'bg-destructive/15 text-destructive' : m.status === 'Low' ? 'bg-warning/15 text-warning' : 'bg-success/15 text-success'}`}>{m.status}</span></td>
+          <p className="text-sm text-muted-foreground">
+            Based on production orders in <strong className="text-foreground">Planned</strong> or{' '}
+            <strong className="text-foreground">In Progress</strong> and live BOM + raw stock. Consumption rate is spread from today through each order&apos;s end date.
+          </p>
+          <div className="bg-card border border-border rounded-xl overflow-hidden overflow-x-auto">
+            <table className="w-full min-w-[720px]">
+              <thead>
+                <tr className="border-b border-border bg-secondary/50">
+                  {(
+                    [
+                      ['materialName', 'Material name'],
+                      ['requiredQty', 'Required qty'],
+                      ['currentStock', 'Current stock'],
+                      ['shortfall', 'Shortfall'],
+                      ['daysUntilStockout', 'Days until stockout'],
+                      ['status', 'Status'],
+                    ] as const
+                  ).map(([key, label]) => (
+                    <th key={key} className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase">
+                      <button
+                        type="button"
+                        onClick={() => toggleForecastSort(key)}
+                        className="inline-flex items-center gap-1 hover:text-foreground"
+                      >
+                        {label}
+                        <ArrowUpDown className="h-3 w-3 opacity-60" />
+                      </button>
+                    </th>
+                  ))}
                 </tr>
-              ))}</tbody>
+              </thead>
+              <tbody>
+                {forecastRowsSorted.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} className="px-4 py-10 text-center text-muted-foreground">
+                      No active planned or in-progress production with BOM lines.
+                    </td>
+                  </tr>
+                ) : (
+                  forecastRowsSorted.map((m) => (
+                    <tr key={m.materialId} className="border-b border-border/50 hover:bg-secondary/30 transition-colors">
+                      <td className="px-4 py-3 text-sm font-medium text-foreground">{m.materialName}</td>
+                      <td className="px-4 py-3 text-sm text-center tabular-nums text-foreground">
+                        {m.requiredQty.toFixed(1)} {m.unit}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-center tabular-nums text-foreground">
+                        {m.currentStock} {m.unit}
+                      </td>
+                      <td className={`px-4 py-3 text-sm text-center font-medium tabular-nums ${m.shortfall > 0 ? 'text-destructive' : 'text-muted-foreground'}`}>
+                        {m.shortfall > 0 ? `${m.shortfall.toFixed(1)} ${m.unit}` : '—'}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-center tabular-nums text-foreground">
+                        {m.daysUntilStockout != null ? m.daysUntilStockout : '—'}
+                      </td>
+                      <td className="px-4 py-3 text-center">
+                        <span
+                          className={`text-xs px-2.5 py-1 rounded-full font-semibold border ${
+                            m.status === 'Critical'
+                              ? 'bg-destructive/15 text-destructive border-destructive/40'
+                              : m.status === 'Warning'
+                                ? 'bg-warning/15 text-warning border-warning/40'
+                                : 'bg-success/15 text-success border-success/40'
+                          }`}
+                        >
+                          {m.status}
+                        </span>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
             </table>
           </div>
         </div>
       )}
 
-      {/* QC Checklist Modal */}
+      {/* QC Checklist Modal — local state per order */}
       {showQC && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm" onClick={() => setShowQC(null)}>
-          <div className="bg-card border border-border rounded-2xl p-6 w-full max-w-md shadow-lg animate-fade-in" onClick={e => e.stopPropagation()}>
-            <h3 className="text-lg font-display font-bold text-foreground mb-4">QC Checklist — {showQC}</h3>
+          <div className="bg-card border border-border rounded-2xl p-6 w-full max-w-lg shadow-lg animate-fade-in max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+            <h3 className="text-lg font-display font-bold text-foreground mb-4">QC checklist — {showQC}</h3>
             <div className="space-y-3">
               {qcState.map((item, i) => (
-                <div key={i} className="flex items-center gap-3 p-3 rounded-lg bg-secondary/50">
-                  <div className="flex-1">
-                    <p className="text-sm font-medium text-foreground">{item.name}</p>
-                    <Input value={item.note} onChange={e => setQcState(prev => prev.map((it, idx) => idx === i ? { ...it, note: e.target.value } : it))} placeholder="Note (optional)" className="mt-1 h-8 text-xs" />
-                  </div>
-                  <div className="flex gap-1">
-                    <button onClick={() => setQcState(prev => prev.map((it, idx) => idx === i ? { ...it, passed: true } : it))}
-                      className={`px-3 py-1.5 rounded text-xs font-medium ${item.passed === true ? 'bg-success text-success-foreground' : 'bg-secondary text-muted-foreground'}`}>Pass</button>
-                    <button onClick={() => setQcState(prev => prev.map((it, idx) => idx === i ? { ...it, passed: false } : it))}
-                      className={`px-3 py-1.5 rounded text-xs font-medium ${item.passed === false ? 'bg-destructive text-destructive-foreground' : 'bg-secondary text-muted-foreground'}`}>Fail</button>
+                <div key={item.name} className="p-3 rounded-lg bg-secondary/50 space-y-2">
+                  <p className="text-sm font-medium text-foreground">{item.name}</p>
+                  <Input
+                    value={item.note}
+                    onChange={(e) =>
+                      setQcState((prev) => prev.map((it, idx) => (idx === i ? { ...it, note: e.target.value } : it)))
+                    }
+                    placeholder="Notes (optional)"
+                    className="h-8 text-xs"
+                  />
+                  <div className="flex flex-wrap gap-1">
+                    {(['pass', 'fail', 'pending'] as const).map((st) => (
+                      <button
+                        key={st}
+                        type="button"
+                        onClick={() =>
+                          setQcState((prev) => prev.map((it, idx) => (idx === i ? { ...it, status: st } : it)))
+                        }
+                        className={`px-3 py-1.5 rounded text-xs font-medium capitalize ${
+                          item.status === st
+                            ? st === 'pass'
+                              ? 'bg-success text-success-foreground'
+                              : st === 'fail'
+                                ? 'bg-destructive text-destructive-foreground'
+                                : 'bg-muted text-foreground'
+                            : 'bg-secondary text-muted-foreground'
+                        }`}
+                      >
+                        {st}
+                      </button>
+                    ))}
                   </div>
                 </div>
               ))}
-              {qcState.some(i => i.passed === false) && <p className="text-xs text-destructive">⚠️ Order cannot be marked Completed with failed checks.</p>}
-              <div className="flex gap-3">
-                <Button variant="outline" onClick={() => setShowQC(null)} className="flex-1">Cancel</Button>
-                <Button onClick={submitQC} className="flex-1 gradient-primary text-primary-foreground" disabled={qcState.some(i => i.passed === null)}>Submit QC</Button>
+              {qcState.some((i) => i.status === 'fail') && (
+                <div className="rounded-lg border border-destructive/50 bg-destructive/10 px-3 py-2 text-sm text-destructive font-medium">
+                  QC Failed — this order cannot be marked Completed until all items pass.
+                </div>
+              )}
+              <div className="flex flex-col sm:flex-row gap-2 pt-2">
+                <Button variant="outline" onClick={() => setShowQC(null)} className="flex-1">
+                  Cancel
+                </Button>
+                <Button variant="secondary" onClick={saveQCProgress} className="flex-1">
+                  Save checklist
+                </Button>
+                <Button
+                  onClick={completeOrderAfterQC}
+                  className="flex-1 gradient-primary text-primary-foreground"
+                  disabled={!qcState.every((i) => i.status === 'pass')}
+                >
+                  Complete order
+                </Button>
               </div>
+              <p className="text-xs text-muted-foreground">
+                Use <strong className="text-foreground">Save checklist</strong> to keep Pass/Fail/Pending in local memory.{' '}
+                <strong className="text-foreground">Complete order</strong> is only enabled when every line is Pass.
+              </p>
             </div>
           </div>
         </div>

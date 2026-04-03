@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useInventory } from '@/contexts/InventoryContext';
 import { formatCurrency, getStockStatus, predictDaysUntilStockout } from '@/lib/mockData';
 import {
@@ -28,6 +28,20 @@ export default function DashboardPage() {
   const [expandedCard, setExpandedCard] = useState<string | null>(null);
   const [nlQuery, setNlQuery] = useState('');
   const [nlResult, setNlResult] = useState<ReturnType<typeof processNLQuery>>(null);
+
+  useEffect(() => {
+    const scroll = () => {
+      if (sessionStorage.getItem('inveto:scrollAnomalies') === '1') {
+        sessionStorage.removeItem('inveto:scrollAnomalies');
+        requestAnimationFrame(() => {
+          document.getElementById('dashboard-anomalies')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        });
+      }
+    };
+    scroll();
+    window.addEventListener('inveto:nav-intent', scroll);
+    return () => window.removeEventListener('inveto:nav-intent', scroll);
+  }, []);
 
   const monthlySales = useMemo(
     () => buildMonthlySalesChartSeries(orders, products, 8),
@@ -226,20 +240,24 @@ export default function DashboardPage() {
         })}
       </div>
 
-      {/* Anomalies Card */}
-      {anomalies.length > 0 && (
-        <div className="bg-card border border-warning/30 rounded-xl p-5">
-          <h3 className="font-display font-semibold text-foreground mb-3 flex items-center gap-2"><Zap className="h-5 w-5 text-warning" /> Anomalies Detected ({anomalies.length})</h3>
-          <div className="space-y-2">
-            {anomalies.slice(0, 6).map((a, i) => (
-              <div key={i} className="flex items-center justify-between p-3 rounded-lg bg-secondary/50">
-                <div><p className="text-sm font-medium text-foreground">{a.label}</p><p className="text-xs text-muted-foreground">{a.description}</p></div>
-                <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${a.severity === 'Critical' ? 'bg-destructive/15 text-destructive' : 'bg-warning/15 text-warning'}`}>{a.severity}</span>
-              </div>
-            ))}
+      {/* Anomalies Card — anchor for voice / navigation */}
+      <div id="dashboard-anomalies">
+        {anomalies.length > 0 ? (
+          <div className="bg-card border border-warning/30 rounded-xl p-5">
+            <h3 className="font-display font-semibold text-foreground mb-3 flex items-center gap-2"><Zap className="h-5 w-5 text-warning" /> Anomalies Detected ({anomalies.length})</h3>
+            <div className="space-y-2">
+              {anomalies.slice(0, 6).map((a, i) => (
+                <div key={i} className="flex items-center justify-between p-3 rounded-lg bg-secondary/50">
+                  <div><p className="text-sm font-medium text-foreground">{a.label}</p><p className="text-xs text-muted-foreground">{a.description}</p></div>
+                  <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${a.severity === 'Critical' ? 'bg-destructive/15 text-destructive' : 'bg-warning/15 text-warning'}`}>{a.severity}</span>
+                </div>
+              ))}
+            </div>
           </div>
-        </div>
-      )}
+        ) : (
+          <p className="text-sm text-muted-foreground py-2">No anomalies flagged right now.</p>
+        )}
+      </div>
 
       {/* Charts */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">

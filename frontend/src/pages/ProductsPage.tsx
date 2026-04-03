@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useInventory } from '@/contexts/InventoryContext';
 import { categories, formatCurrency, getStockStatus, Product } from '@/lib/mockData';
@@ -44,6 +44,19 @@ export default function ProductsPage() {
   const [expandedVariant, setExpandedVariant] = useState<string | null>(null);
   const [showVariantModal, setShowVariantModal] = useState<string | null>(null);
   const [variantAttrs, setVariantAttrs] = useState({ sizes: 'S,M,L,XL', colors: 'Red,Blue' });
+  const [stockFilterMode, setStockFilterMode] = useState<'all' | 'low'>('all');
+
+  useEffect(() => {
+    const apply = () => {
+      if (sessionStorage.getItem('inveto:productsFilter') === 'lowStock') {
+        setStockFilterMode('low');
+        sessionStorage.removeItem('inveto:productsFilter');
+      }
+    };
+    apply();
+    window.addEventListener('inveto:nav-intent', apply);
+    return () => window.removeEventListener('inveto:nav-intent', apply);
+  }, []);
 
   const isAdmin = user?.role === 'admin';
 
@@ -83,7 +96,8 @@ export default function ProductsPage() {
     const result = products.filter(p =>
       p.name.toLowerCase().includes(search.toLowerCase()) &&
       (categoryFilter === 'All' || p.category === categoryFilter) &&
-      (abcFilter === 'All' || abcData[p.id] === abcFilter)
+      (abcFilter === 'All' || abcData[p.id] === abcFilter) &&
+      (stockFilterMode === 'all' || getStockStatus(p) !== 'ok')
     );
     result.sort((a, b) => {
       const dir = sortDir === 'asc' ? 1 : -1;
@@ -92,7 +106,7 @@ export default function ProductsPage() {
       return (a.stock - b.stock) * dir;
     });
     return result;
-  }, [products, search, categoryFilter, abcFilter, sortBy, sortDir, abcData]);
+  }, [products, search, categoryFilter, abcFilter, sortBy, sortDir, abcData, stockFilterMode]);
 
   const toggleSort = (field: 'name' | 'price' | 'stock') => {
     if (sortBy === field) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
@@ -253,6 +267,17 @@ export default function ProductsPage() {
           <option value="All">All Categories</option>
           {categories.map(c => <option key={c} value={c}>{c}</option>)}
         </select>
+        <button
+          type="button"
+          onClick={() => setStockFilterMode((m) => (m === 'low' ? 'all' : 'low'))}
+          className={`h-10 px-4 rounded-lg border text-sm font-medium transition-colors ${
+            stockFilterMode === 'low'
+              ? 'border-warning bg-warning/15 text-warning'
+              : 'border-input bg-card text-foreground hover:bg-secondary'
+          }`}
+        >
+          Low / critical stock
+        </button>
         {selectedIds.size > 0 && hasPermission('edit') && (
           <Button onClick={() => setShowBulkAdjust(true)} variant="outline" className="gap-2">
             <CheckSquare className="h-4 w-4" /> Bulk Adjust ({selectedIds.size})

@@ -1,6 +1,6 @@
 import React from 'react';
 import { useAuth } from '@/contexts/AuthContext';
-import { LayoutDashboard, ShoppingCart, Boxes, Bell, Users, Activity, Brain, TrendingUp, LogOut, RefreshCw, Factory, Truck, UserCheck, FileText, ClipboardList, Wallet } from 'lucide-react';
+import { LayoutDashboard, ShoppingCart, Boxes, Bell, Users, Activity, Brain, TrendingUp, LogOut, RefreshCw, Factory, Truck, UserCheck, FileText, ClipboardList, Wallet, FlaskConical } from 'lucide-react';
 import invetoLogo from '@/assets/inveto-logo.png';
 
 interface AppSidebarProps {
@@ -20,6 +20,7 @@ const navItems = [
   { id: 'predictions', label: 'AI Predictions', icon: Brain },
   { id: 'replenishment', label: 'Replenishment', icon: RefreshCw },
   { id: 'manufacturing', label: 'Manufacturing', icon: Factory },
+  { id: 'simulation', label: 'Simulation', icon: FlaskConical },
   { id: 'alerts', label: 'Alerts', icon: Bell },
   { id: 'activity', label: 'Activity Log', icon: Activity },
   { id: 'users', label: 'User Management', icon: Users, adminOnly: true },

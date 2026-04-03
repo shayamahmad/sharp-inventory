@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import { AuthProvider, useAuth } from '@/contexts/AuthContext';
 import { ThemeProvider } from '@/contexts/ThemeContext';
 import { InventoryProvider, useInventory } from '@/contexts/InventoryContext';
@@ -19,6 +19,7 @@ import PurchaseOrdersPage from './PurchaseOrdersPage';
 import CustomersPage from './CustomersPage';
 import QuotationsPage from './QuotationsPage';
 import CashFlowPage from './CashFlowPage';
+import SimulationPage from './SimulationPage';
 
 const pageTitles: Record<string, { title: string; subtitle: string }> = {
   dashboard: { title: 'Dashboard', subtitle: 'Overview of your inventory and sales' },
@@ -32,6 +33,7 @@ const pageTitles: Record<string, { title: string; subtitle: string }> = {
   predictions: { title: 'AI Predictions', subtitle: 'Smart restock & demand forecasting' },
   replenishment: { title: 'Intelligent Replenishment', subtitle: 'Demand forecasting & auto-reorder planning' },
   manufacturing: { title: 'Manufacturing Hub', subtitle: 'Production planning, BOM & raw materials' },
+  simulation: { title: 'Inventory simulation', subtitle: 'What-if demand, lead time & seasonality (not live data)' },
   alerts: { title: 'Alerts & Notifications', subtitle: 'Stay on top of important events' },
   activity: { title: 'Activity Log', subtitle: 'Who did what and when' },
   users: { title: 'User Management', subtitle: 'Manage staff and viewer accounts' },
@@ -48,6 +50,24 @@ function InventoryShell({
 }) {
   const { inventoryHydrating } = useInventory();
 
+  const handleHeaderNavigate = useCallback(
+    (
+      page: string,
+      opts?: {
+        openPurchaseOrderModal?: boolean;
+        productsLowStock?: boolean;
+        scrollDashboardAnomalies?: boolean;
+      }
+    ) => {
+      setCurrentPage(page);
+      if (opts?.openPurchaseOrderModal) sessionStorage.setItem('inveto:openPO', '1');
+      if (opts?.productsLowStock) sessionStorage.setItem('inveto:productsFilter', 'lowStock');
+      if (opts?.scrollDashboardAnomalies) sessionStorage.setItem('inveto:scrollAnomalies', '1');
+      window.dispatchEvent(new Event('inveto:nav-intent'));
+    },
+    [setCurrentPage]
+  );
+
   return (
     <div className="flex min-h-screen bg-background">
       {inventoryHydrating && (
@@ -61,7 +81,7 @@ function InventoryShell({
       )}
       <AppSidebar currentPage={currentPage} onNavigate={setCurrentPage} />
       <div className="flex-1 flex flex-col min-w-0">
-        <AppHeader title={pageInfo.title} subtitle={pageInfo.subtitle} />
+        <AppHeader title={pageInfo.title} subtitle={pageInfo.subtitle} onNavigate={handleHeaderNavigate} />
         <main className="flex-1 p-6 overflow-auto">
           {currentPage === 'dashboard' && <DashboardPage />}
           {currentPage === 'products' && <ProductsPage />}
@@ -74,6 +94,7 @@ function InventoryShell({
           {currentPage === 'predictions' && <PredictionsPage />}
           {currentPage === 'replenishment' && <ReplenishmentPage />}
           {currentPage === 'manufacturing' && <ManufacturingPage />}
+          {currentPage === 'simulation' && <SimulationPage />}
           {currentPage === 'alerts' && <AlertsPage />}
           {currentPage === 'activity' && <ActivityPage />}
           {currentPage === 'users' && <UsersPage />}
