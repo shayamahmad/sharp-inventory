@@ -1,7 +1,9 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useInventory } from '@/contexts/InventoryContext';
-import { formatCurrency } from '@/lib/mockData';
+import type { POCurrency, PurchaseOrder } from '@/contexts/InventoryContext';
+import { formatCurrency, type Product } from '@/lib/mockData';
+import { useLiveExchangeRates, EXCHANGE_BASE_INR_PER_UNIT, type FxCode } from '@/hooks/useLiveExchangeRates';
 import { buildSupplierProfiles } from '@/lib/supplierNegotiation';
 import { nextPrefixedId } from '@/lib/ids';
 import { Button } from '@/components/ui/button';
@@ -34,9 +36,35 @@ const statusColors: Record<string, string> = {
 const statusFlow = ['Draft', 'Sent', 'Acknowledged', 'In Transit', 'Received', 'Closed'] as const;
 type POFlowStatus = (typeof statusFlow)[number];
 
+const CURRENCY_OPTIONS: POCurrency[] = ['INR', 'USD', 'EUR', 'CNY', 'GBP'];
+
+function poFxSnapshot(po: PurchaseOrder, product: Product | undefined, live: Record<FxCode, number>) {
+  const cur: POCurrency = po.poCurrency ?? 'INR';
+  const lineForeign = po.lineTotalForeign ?? (product ? po.quantityOrdered * product.cost : 0);
+  const rate0 =
+    po.rateInrPerUnitAtCreation ?? (cur === 'INR' ? 1 : EXCHANGE_BASE_INR_PER_UNIT[cur as FxCode]);
+  const inr0 = po.amountInrAtCreation ?? (cur === 'INR' ? lineForeign : lineForeign * rate0);
+  if (cur === 'INR') {
+    return {
+      cur,
+      lineForeign,
+      rate0: 1,
+      inr0,
+      inrNow: lineForeign,
+      movePct: 0,
+      foreign: false as const,
+    };
+  }
+  const liveR = live[cur as FxCode];
+  const inrNow = lineForeign * liveR;
+  const movePct = inr0 > 0 ? ((inrNow - inr0) / inr0) * 100 : 0;
+  return { cur, lineForeign, rate0, inr0, inrNow, liveR, movePct, foreign: true as const };
+}
+
 export default function PurchaseOrdersPage() {
   const { hasPermission, user } = useAuth();
   const { purchaseOrders, setPurchaseOrders, products, setProducts, addLog } = useInventory();
+  const liveRates = useLiveExchangeRates();
   const [mainTab, setMainTab] = useState<'orders' | 'suppliers'>('orders');
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('All');
@@ -64,7 +92,14 @@ export default function PurchaseOrdersPage() {
   }, []);
 
   // New PO form
-  const [newPO, setNewPO] = useState({ supplier: '', productId: '', quantity: 0, expectedDelivery: '' });
+  const [newPO, setNewPO] = useState<{
+    supplier: string;
+    productId: string;
+    quantity: number;
+    expectedDelivery: string;
+    currency: POCurrency;
+    lineTotal: string;
+  }>({ supplier: '', productId: '', quantity: 0, expectedDelivery: '', currency: 'INR', lineTotal: '' });
 
   const filtered = purchaseOrders.filter(po =>
     (po.id.toLowerCase().includes(search.toLowerCase()) || po.supplier.toLowerCase().includes(search.toLowerCase()) || po.productName.toLowerCase().includes(search.toLowerCase())) &&
@@ -102,7 +137,9 @@ export default function PurchaseOrdersPage() {
       if (nextStatus === 'Sent') updated.dateSent = new Date().toISOString().split('T')[0];
       return updated;
     }));
-    addLog(user?.name || 'System', 'PO Status Update', `${poId} moved to ${nextStatus}`);
+    addLog(user?.name || 'System', 'PO Status Update', `${poId} moved to ${nextStatus}.`, {
+      editDiff: { old: `Status: ${po.status}`, new: `Status: ${nextStatus}` },
+    });
   };
 
   const receiveGRN = () => {
@@ -129,13 +166,27 @@ export default function PurchaseOrdersPage() {
     const product = products.find(p => p.id === newPO.productId);
     if (!product || newPO.quantity <= 0 || !newPO.supplier || !newPO.expectedDelivery) return;
     const id = nextPrefixedId('PO', purchaseOrders.map((p) => p.id));
+    const cur = newPO.currency;
+    const entered = Number(newPO.lineTotal);
+    const fallbackTotal = product.cost * newPO.quantity;
+    const lineTotalForeign = Number.isFinite(entered) && entered > 0 ? entered : fallbackTotal;
+    let rateInrPerUnitAtCreation = 1;
+    let amountInrAtCreation = lineTotalForeign;
+    if (cur !== 'INR') {
+      rateInrPerUnitAtCreation = liveRates[cur as FxCode];
+      amountInrAtCreation = lineTotalForeign * rateInrPerUnitAtCreation;
+    }
     setPurchaseOrders(prev => [...prev, {
       id, supplier: newPO.supplier, productId: product.id, productName: product.name,
       quantityOrdered: newPO.quantity, quantityReceived: null,
       expectedDelivery: newPO.expectedDelivery, status: 'Draft', discrepancy: false,
+      poCurrency: cur,
+      lineTotalForeign,
+      amountInrAtCreation,
+      rateInrPerUnitAtCreation,
     }]);
-    addLog(user?.name || 'System', 'PO Created', `${id} for ${product.name} (${newPO.quantity} units)`);
-    setNewPO({ supplier: '', productId: '', quantity: 0, expectedDelivery: '' });
+    addLog(user?.name || 'System', 'PO Created', `${id} for ${product.name} (${newPO.quantity} units, ${cur} ${lineTotalForeign.toFixed(2)})`);
+    setNewPO({ supplier: '', productId: '', quantity: 0, expectedDelivery: '', currency: 'INR', lineTotal: '' });
     setShowAddModal(false);
   };
 
@@ -256,6 +307,16 @@ export default function PurchaseOrdersPage() {
 
       {mainTab === 'orders' && (
       <>
+      <div className="rounded-lg border border-border bg-muted/40 px-3 py-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-muted-foreground">
+        <span className="font-semibold text-foreground">Live mock rates (INR per 1 unit)</span>
+        {(Object.keys(liveRates) as FxCode[]).map((c) => (
+          <span key={c} className="tabular-nums">
+            {c}: <strong className="text-foreground">{liveRates[c].toFixed(3)}</strong>
+          </span>
+        ))}
+        <span className="text-[10px] opacity-80">Updates every 30s (±0.5%)</span>
+      </div>
+
       {/* Supplier Lead Time Summary */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         {uniqueSuppliers.slice(0, 4).map(supplier => {
@@ -290,6 +351,9 @@ export default function PurchaseOrdersPage() {
       <div className="space-y-3">
         {filtered.map(po => {
           const avgLead = getSupplierLeadTimes(po.supplier);
+          const prod = products.find((p) => p.id === po.productId);
+          const fx = poFxSnapshot(po, prod, liveRates);
+          const riskFx = fx.foreign && Math.abs(fx.movePct) > 3;
           return (
             <div key={po.id} className="bg-card border border-border rounded-xl overflow-hidden hover:shadow-md transition-shadow">
               <button className="w-full px-5 py-4 flex items-center justify-between" onClick={() => setExpanded(expanded === po.id ? null : po.id)}>
@@ -312,6 +376,24 @@ export default function PurchaseOrdersPage() {
                     <div><span className="text-muted-foreground block text-xs">Qty Ordered</span><span className="text-foreground font-medium">{po.quantityOrdered}</span></div>
                     <div><span className="text-muted-foreground block text-xs">Qty Received</span><span className="text-foreground font-medium">{po.quantityReceived ?? '—'}</span></div>
                     <div><span className="text-muted-foreground block text-xs">Avg Lead Time</span><span className="text-foreground font-medium">{avgLead ? `${avgLead} days` : 'N/A'}</span></div>
+                  </div>
+                  <div className="rounded-lg border border-border bg-secondary/30 p-3 text-sm space-y-1">
+                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Currency & landed cost</p>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-xs">
+                      <div><span className="text-muted-foreground">PO currency</span><p className="font-medium text-foreground">{fx.cur}</p></div>
+                      <div><span className="text-muted-foreground">Supplier amount</span><p className="font-medium text-foreground tabular-nums">{fx.lineForeign.toFixed(2)} {fx.cur}</p></div>
+                      <div><span className="text-muted-foreground">Rate at creation (INR/1)</span><p className="font-medium text-foreground tabular-nums">{fx.rate0.toFixed(4)}</p></div>
+                      <div><span className="text-muted-foreground">INR at creation</span><p className="font-medium text-foreground tabular-nums">{formatCurrency(fx.inr0)}</p></div>
+                      <div><span className="text-muted-foreground">Current INR (live rate)</span><p className="font-medium text-foreground tabular-nums">{formatCurrency(fx.inrNow)}</p></div>
+                      <div><span className="text-muted-foreground">Rate movement</span><p className={`font-medium tabular-nums ${fx.foreign && fx.movePct > 0 ? 'text-warning' : fx.foreign && fx.movePct < 0 ? 'text-success' : 'text-foreground'}`}>
+                        {fx.foreign ? `${fx.movePct >= 0 ? '+' : ''}${fx.movePct.toFixed(2)}%` : '—'}
+                      </p></div>
+                    </div>
+                    {riskFx && (
+                      <div className="mt-2 rounded-md border border-warning/40 bg-warning/10 px-2 py-1.5 text-xs font-medium text-warning">
+                        Exchange rate risk — landed cost has changed by {Math.abs(fx.movePct).toFixed(2)}% since PO creation.
+                      </div>
+                    )}
                   </div>
                   {po.discrepancy && po.quantityReceived !== null && (
                     <div className="p-3 rounded-lg bg-warning/10 border border-warning/20 text-sm text-warning">
@@ -371,6 +453,32 @@ export default function PurchaseOrdersPage() {
                   <Input type="date" value={newPO.expectedDelivery} onChange={e => setNewPO(p => ({ ...p, expectedDelivery: e.target.value }))} />
                 </div>
               </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-sm font-medium text-foreground mb-1 block">Currency *</label>
+                  <select
+                    value={newPO.currency}
+                    onChange={(e) => setNewPO((p) => ({ ...p, currency: e.target.value as POCurrency }))}
+                    className="w-full h-10 px-3 rounded-lg border border-input bg-card text-foreground text-sm"
+                  >
+                    {CURRENCY_OPTIONS.map((c) => (
+                      <option key={c} value={c}>{c}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-sm font-medium text-foreground mb-1 block">PO total (in currency)</label>
+                  <Input
+                    type="number"
+                    min={0}
+                    step={0.01}
+                    value={newPO.lineTotal}
+                    onChange={(e) => setNewPO((p) => ({ ...p, lineTotal: e.target.value }))}
+                    placeholder={`Default: qty × cost (${newPO.productId ? 'auto' : 'select product'})`}
+                  />
+                </div>
+              </div>
+              <p className="text-xs text-muted-foreground">Foreign POs store INR equivalent at creation and compare to live mock rates.</p>
               <div className="flex gap-3 pt-2">
                 <Button variant="outline" onClick={() => setShowAddModal(false)} className="flex-1">Cancel</Button>
                 <Button onClick={addPO} className="flex-1 gradient-primary text-primary-foreground"

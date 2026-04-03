@@ -10,6 +10,7 @@ import {
   users as initialUsers,
   User,
 } from '@/lib/mockData';
+import type { FxCode } from '@/hooks/useLiveExchangeRates';
 import {
   rawMaterials as mockRawMaterials,
   billsOfMaterials as mockBillsOfMaterials,
@@ -63,6 +64,8 @@ export interface StockAdjustment {
   timestamp: string;
 }
 
+export type POCurrency = 'INR' | FxCode;
+
 export interface PurchaseOrder {
   id: string;
   supplier: string;
@@ -75,6 +78,14 @@ export interface PurchaseOrder {
   dateSent?: string;
   dateReceived?: string;
   discrepancy: boolean;
+  /** Supplier / PO currency; defaults to INR for legacy rows */
+  poCurrency?: POCurrency;
+  /** Total PO value in poCurrency at creation */
+  lineTotalForeign?: number;
+  /** Snapshot INR equivalent when PO was created */
+  amountInrAtCreation?: number;
+  /** INR per 1 unit of foreign currency at creation (1 for INR) */
+  rateInrPerUnitAtCreation?: number;
 }
 
 export interface Customer {
@@ -131,7 +142,12 @@ interface InventoryContextType {
   orders: Order[];
   setOrders: React.Dispatch<React.SetStateAction<Order[]>>;
   activityLogs: ActivityLog[];
-  addLog: (userName: string, action: string, details: string) => void;
+  addLog: (
+    userName: string,
+    action: string,
+    details: string,
+    meta?: { editDiff?: { old: string; new: string } }
+  ) => void;
   purchaseOrders: PurchaseOrder[];
   setPurchaseOrders: React.Dispatch<React.SetStateAction<PurchaseOrder[]>>;
   customers: Customer[];
@@ -179,12 +195,12 @@ function extractCustomers(orders: Order[]): Customer[] {
 }
 
 const initialPOs: PurchaseOrder[] = [
-  { id: 'PO001', supplier: 'TechWorld Pvt Ltd', productId: 'P001', productName: 'Wireless Earbuds Pro', quantityOrdered: 200, quantityReceived: 200, expectedDelivery: '2026-03-20', status: 'Closed', dateSent: '2026-03-10', dateReceived: '2026-03-20', discrepancy: false },
-  { id: 'PO002', supplier: 'FashionHub India', productId: 'P002', productName: 'Cotton T-Shirt Premium', quantityOrdered: 300, quantityReceived: 280, expectedDelivery: '2026-03-15', status: 'Closed', dateSent: '2026-03-05', dateReceived: '2026-03-14', discrepancy: true },
-  { id: 'PO003', supplier: 'NatureFresh Foods', productId: 'P003', productName: 'Organic Green Tea', quantityOrdered: 150, quantityReceived: null, expectedDelivery: '2026-03-30', status: 'In Transit', dateSent: '2026-03-20', discrepancy: false },
-  { id: 'PO004', supplier: 'BrightLite Corp', productId: 'P004', productName: 'Smart LED Bulb', quantityOrdered: 100, quantityReceived: null, expectedDelivery: '2026-04-01', status: 'Sent', dateSent: '2026-03-22', discrepancy: false },
-  { id: 'PO005', supplier: 'GlowSkin Labs', productId: 'P006', productName: 'Face Serum Vitamin C', quantityOrdered: 200, quantityReceived: 160, expectedDelivery: '2026-03-18', status: 'Closed', dateSent: '2026-03-08', dateReceived: '2026-03-17', discrepancy: true },
-  { id: 'PO006', supplier: 'FitLife Sports', productId: 'P005', productName: 'Yoga Mat Premium', quantityOrdered: 50, quantityReceived: null, expectedDelivery: '2026-04-05', status: 'Draft', discrepancy: false },
+  { id: 'PO001', supplier: 'TechWorld Pvt Ltd', productId: 'P001', productName: 'Wireless Earbuds Pro', quantityOrdered: 200, quantityReceived: 200, expectedDelivery: '2026-03-20', status: 'Closed', dateSent: '2026-03-10', dateReceived: '2026-03-20', discrepancy: false, poCurrency: 'INR', lineTotalForeign: 240000, amountInrAtCreation: 240000, rateInrPerUnitAtCreation: 1 },
+  { id: 'PO002', supplier: 'FashionHub India', productId: 'P002', productName: 'Cotton T-Shirt Premium', quantityOrdered: 300, quantityReceived: 280, expectedDelivery: '2026-03-15', status: 'Closed', dateSent: '2026-03-05', dateReceived: '2026-03-14', discrepancy: true, poCurrency: 'USD', lineTotalForeign: 1260, amountInrAtCreation: 105210, rateInrPerUnitAtCreation: 83.5 },
+  { id: 'PO003', supplier: 'NatureFresh Foods', productId: 'P003', productName: 'Organic Green Tea', quantityOrdered: 150, quantityReceived: null, expectedDelivery: '2026-03-30', status: 'In Transit', dateSent: '2026-03-20', discrepancy: false, poCurrency: 'INR', lineTotalForeign: 22500, amountInrAtCreation: 22500, rateInrPerUnitAtCreation: 1 },
+  { id: 'PO004', supplier: 'BrightLite Corp', productId: 'P004', productName: 'Smart LED Bulb', quantityOrdered: 100, quantityReceived: null, expectedDelivery: '2026-04-01', status: 'Sent', dateSent: '2026-03-22', discrepancy: false, poCurrency: 'EUR', lineTotalForeign: 320, amountInrAtCreation: 28864, rateInrPerUnitAtCreation: 90.2 },
+  { id: 'PO005', supplier: 'GlowSkin Labs', productId: 'P006', productName: 'Face Serum Vitamin C', quantityOrdered: 200, quantityReceived: 160, expectedDelivery: '2026-03-18', status: 'Closed', dateSent: '2026-03-08', dateReceived: '2026-03-17', discrepancy: true, poCurrency: 'INR', lineTotalForeign: 64000, amountInrAtCreation: 64000, rateInrPerUnitAtCreation: 1 },
+  { id: 'PO006', supplier: 'FitLife Sports', productId: 'P005', productName: 'Yoga Mat Premium', quantityOrdered: 50, quantityReceived: null, expectedDelivery: '2026-04-05', status: 'Draft', discrepancy: false, poCurrency: 'GBP', lineTotalForeign: 290, amountInrAtCreation: 30682, rateInrPerUnitAtCreation: 105.8 },
 ];
 
 const initialQuotations: Quotation[] = [
@@ -508,7 +524,8 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
-  const addLog = useCallback((userName: string, action: string, details: string) => {
+  const addLog = useCallback(
+    (userName: string, action: string, details: string, meta?: { editDiff?: { old: string; new: string } }) => {
     const log: ActivityLog = {
       id: `A${Date.now()}`,
       userId: '0',
@@ -522,12 +539,14 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
         hour: '2-digit',
         minute: '2-digit',
       }),
+      ...(meta?.editDiff ? { editDiff: meta.editDiff } : {}),
     };
     setLogs((prev) => [log, ...prev]);
     if (apiInventoryEnabled()) {
       void apiJson('POST', '/api/activity-logs', log).catch((err) => console.error('Activity log sync', err));
     }
-  }, []);
+  },
+  []);
 
   const getReservedStock = useCallback(
     (productId: string) => {

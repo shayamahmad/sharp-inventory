@@ -13,6 +13,8 @@ export interface User {
 export interface Product {
   id: string;
   name: string;
+  /** Warehouse bin / aisle label for picklists (mock; optional when loaded from API) */
+  binLocation?: string;
   category: string;
   price: number;
   cost: number;
@@ -42,6 +44,8 @@ export interface ActivityLog {
   action: string;
   details: string;
   timestamp: string;
+  /** Optional before/after for edit-style audit rows */
+  editDiff?: { old: string; new: string };
 }
 
 export interface Notification {
@@ -62,25 +66,25 @@ export const users: User[] = [
 export const categories = ['Electronics', 'Clothing', 'Food & Beverages', 'Home & Garden', 'Sports', 'Beauty', 'Toys', 'Books'];
 
 export const products: Product[] = [
-  { id: 'P001', name: 'Wireless Earbuds Pro', category: 'Electronics', price: 2499, cost: 1200, stock: 145, minStock: 30, unit: 'pcs', supplier: 'TechWorld Pvt Ltd', lastRestocked: '2026-03-20', salesLast30: 89 },
-  { id: 'P002', name: 'Cotton T-Shirt Premium', category: 'Clothing', price: 799, cost: 350, stock: 8, minStock: 50, unit: 'pcs', supplier: 'FashionHub India', lastRestocked: '2026-03-10', salesLast30: 156 },
-  { id: 'P003', name: 'Organic Green Tea', category: 'Food & Beverages', price: 349, cost: 150, stock: 230, minStock: 40, unit: 'boxes', supplier: 'NatureFresh Foods', lastRestocked: '2026-03-18', salesLast30: 67 },
-  { id: 'P004', name: 'Smart LED Bulb', category: 'Home & Garden', price: 599, cost: 250, stock: 3, minStock: 20, unit: 'pcs', supplier: 'BrightLite Corp', lastRestocked: '2026-02-28', salesLast30: 45 },
-  { id: 'P005', name: 'Yoga Mat Premium', category: 'Sports', price: 1299, cost: 600, stock: 72, minStock: 15, unit: 'pcs', supplier: 'FitLife Sports', lastRestocked: '2026-03-15', salesLast30: 34 },
-  { id: 'P006', name: 'Face Serum Vitamin C', category: 'Beauty', price: 899, cost: 320, stock: 15, minStock: 25, unit: 'bottles', supplier: 'GlowSkin Labs', lastRestocked: '2026-03-05', salesLast30: 98 },
-  { id: 'P007', name: 'Building Blocks Set', category: 'Toys', price: 1499, cost: 700, stock: 0, minStock: 10, unit: 'sets', supplier: 'PlayZone India', lastRestocked: '2026-01-15', salesLast30: 2 },
-  { id: 'P008', name: 'Programming with Python', category: 'Books', price: 599, cost: 200, stock: 180, minStock: 20, unit: 'copies', supplier: 'BookWorld Publishers', lastRestocked: '2026-03-22', salesLast30: 12 },
-  { id: 'P009', name: 'Bluetooth Speaker', category: 'Electronics', price: 1899, cost: 900, stock: 55, minStock: 20, unit: 'pcs', supplier: 'TechWorld Pvt Ltd', lastRestocked: '2026-03-19', salesLast30: 72 },
-  { id: 'P010', name: 'Running Shoes', category: 'Sports', price: 3499, cost: 1800, stock: 22, minStock: 15, unit: 'pairs', supplier: 'FitLife Sports', lastRestocked: '2026-03-12', salesLast30: 41 },
-  { id: 'P011', name: 'Herbal Shampoo', category: 'Beauty', price: 449, cost: 180, stock: 95, minStock: 30, unit: 'bottles', supplier: 'GlowSkin Labs', lastRestocked: '2026-03-17', salesLast30: 55 },
-  { id: 'P012', name: 'Masala Chai Pack', category: 'Food & Beverages', price: 199, cost: 80, stock: 320, minStock: 50, unit: 'packs', supplier: 'NatureFresh Foods', lastRestocked: '2026-03-21', salesLast30: 189 },
-  { id: 'P013', name: 'USB-C Hub 7-in-1', category: 'Electronics', price: 1799, cost: 850, stock: 38, minStock: 15, unit: 'pcs', supplier: 'TechWorld Pvt Ltd', lastRestocked: '2026-03-14', salesLast30: 28 },
-  { id: 'P014', name: 'Denim Jacket Classic', category: 'Clothing', price: 2999, cost: 1400, stock: 12, minStock: 10, unit: 'pcs', supplier: 'FashionHub India', lastRestocked: '2026-03-08', salesLast30: 18 },
-  { id: 'P015', name: 'Indoor Plant Pot', category: 'Home & Garden', price: 699, cost: 300, stock: 0, minStock: 15, unit: 'pcs', supplier: 'GreenHome Supplies', lastRestocked: '2026-02-10', salesLast30: 1 },
+  { id: 'P001', name: 'Wireless Earbuds Pro', binLocation: 'A-01', category: 'Electronics', price: 2499, cost: 1200, stock: 145, minStock: 30, unit: 'pcs', supplier: 'TechWorld Pvt Ltd', lastRestocked: '2026-03-20', salesLast30: 89 },
+  { id: 'P002', name: 'Cotton T-Shirt Premium', binLocation: 'A-02', category: 'Clothing', price: 799, cost: 350, stock: 8, minStock: 50, unit: 'pcs', supplier: 'FashionHub India', lastRestocked: '2026-03-10', salesLast30: 156 },
+  { id: 'P003', name: 'Organic Green Tea', binLocation: 'A-03', category: 'Food & Beverages', price: 349, cost: 150, stock: 230, minStock: 40, unit: 'boxes', supplier: 'NatureFresh Foods', lastRestocked: '2026-03-18', salesLast30: 67 },
+  { id: 'P004', name: 'Smart LED Bulb', binLocation: 'A-04', category: 'Home & Garden', price: 599, cost: 250, stock: 3, minStock: 20, unit: 'pcs', supplier: 'BrightLite Corp', lastRestocked: '2026-02-28', salesLast30: 45 },
+  { id: 'P005', name: 'Yoga Mat Premium', binLocation: 'A-05', category: 'Sports', price: 1299, cost: 600, stock: 72, minStock: 15, unit: 'pcs', supplier: 'FitLife Sports', lastRestocked: '2026-03-15', salesLast30: 34 },
+  { id: 'P006', name: 'Face Serum Vitamin C', binLocation: 'A-06', category: 'Beauty', price: 899, cost: 320, stock: 15, minStock: 25, unit: 'bottles', supplier: 'GlowSkin Labs', lastRestocked: '2026-03-05', salesLast30: 98 },
+  { id: 'P007', name: 'Building Blocks Set', binLocation: 'B-01', category: 'Toys', price: 1499, cost: 700, stock: 0, minStock: 10, unit: 'sets', supplier: 'PlayZone India', lastRestocked: '2026-01-15', salesLast30: 2 },
+  { id: 'P008', name: 'Programming with Python', binLocation: 'B-02', category: 'Books', price: 599, cost: 200, stock: 180, minStock: 20, unit: 'copies', supplier: 'BookWorld Publishers', lastRestocked: '2026-03-22', salesLast30: 12 },
+  { id: 'P009', name: 'Bluetooth Speaker', binLocation: 'B-03', category: 'Electronics', price: 1899, cost: 900, stock: 55, minStock: 20, unit: 'pcs', supplier: 'TechWorld Pvt Ltd', lastRestocked: '2026-03-19', salesLast30: 72 },
+  { id: 'P010', name: 'Running Shoes', binLocation: 'B-04', category: 'Sports', price: 3499, cost: 1800, stock: 22, minStock: 15, unit: 'pairs', supplier: 'FitLife Sports', lastRestocked: '2026-03-12', salesLast30: 41 },
+  { id: 'P011', name: 'Herbal Shampoo', binLocation: 'B-05', category: 'Beauty', price: 449, cost: 180, stock: 95, minStock: 30, unit: 'bottles', supplier: 'GlowSkin Labs', lastRestocked: '2026-03-17', salesLast30: 55 },
+  { id: 'P012', name: 'Masala Chai Pack', binLocation: 'B-06', category: 'Food & Beverages', price: 199, cost: 80, stock: 320, minStock: 50, unit: 'packs', supplier: 'NatureFresh Foods', lastRestocked: '2026-03-21', salesLast30: 189 },
+  { id: 'P013', name: 'USB-C Hub 7-in-1', binLocation: 'C-01', category: 'Electronics', price: 1799, cost: 850, stock: 38, minStock: 15, unit: 'pcs', supplier: 'TechWorld Pvt Ltd', lastRestocked: '2026-03-14', salesLast30: 28 },
+  { id: 'P014', name: 'Denim Jacket Classic', binLocation: 'C-02', category: 'Clothing', price: 2999, cost: 1400, stock: 12, minStock: 10, unit: 'pcs', supplier: 'FashionHub India', lastRestocked: '2026-03-08', salesLast30: 18 },
+  { id: 'P015', name: 'Indoor Plant Pot', binLocation: 'C-03', category: 'Home & Garden', price: 699, cost: 300, stock: 0, minStock: 15, unit: 'pcs', supplier: 'GreenHome Supplies', lastRestocked: '2026-02-10', salesLast30: 1 },
   // Dead stock items (low sales, some stock sitting)
-  { id: 'P016', name: 'Vintage Wall Clock', category: 'Home & Garden', price: 1899, cost: 900, stock: 42, minStock: 10, unit: 'pcs', supplier: 'GreenHome Supplies', lastRestocked: '2025-12-15', salesLast30: 1 },
-  { id: 'P017', name: 'Knitting Yarn Bundle', category: 'Toys', price: 399, cost: 150, stock: 85, minStock: 20, unit: 'packs', supplier: 'PlayZone India', lastRestocked: '2025-11-20', salesLast30: 2 },
-  { id: 'P018', name: 'Calligraphy Pen Set', category: 'Books', price: 749, cost: 350, stock: 60, minStock: 10, unit: 'sets', supplier: 'BookWorld Publishers', lastRestocked: '2026-01-05', salesLast30: 0 },
+  { id: 'P016', name: 'Vintage Wall Clock', binLocation: 'C-04', category: 'Home & Garden', price: 1899, cost: 900, stock: 42, minStock: 10, unit: 'pcs', supplier: 'GreenHome Supplies', lastRestocked: '2025-12-15', salesLast30: 1 },
+  { id: 'P017', name: 'Knitting Yarn Bundle', binLocation: 'C-05', category: 'Toys', price: 399, cost: 150, stock: 85, minStock: 20, unit: 'packs', supplier: 'PlayZone India', lastRestocked: '2025-11-20', salesLast30: 2 },
+  { id: 'P018', name: 'Calligraphy Pen Set', binLocation: 'C-12', category: 'Books', price: 749, cost: 350, stock: 60, minStock: 10, unit: 'sets', supplier: 'BookWorld Publishers', lastRestocked: '2026-01-05', salesLast30: 0 },
 ];
 
 export const orders: Order[] = [
@@ -110,7 +114,7 @@ export const orders: Order[] = [
 export const activityLogs: ActivityLog[] = [
   { id: 'A1', userId: '1', userName: 'Sneha Khatry', action: 'Created Order', details: 'Order ORD001 for Vikram Singh', timestamp: '2026-03-24 14:30' },
   { id: 'A2', userId: '2', userName: 'Priya Sharma', action: 'Added Product', details: 'Added 50 units of Masala Chai Pack', timestamp: '2026-03-24 11:15' },
-  { id: 'A3', userId: '1', userName: 'Sneha Khatry', action: 'Updated Stock', details: 'Restocked Wireless Earbuds Pro (+100 units)', timestamp: '2026-03-23 16:45' },
+  { id: 'A3', userId: '1', userName: 'Sneha Khatry', action: 'Updated Stock', details: 'Restocked Wireless Earbuds Pro (+100 units)', timestamp: '2026-03-23 16:45', editDiff: { old: 'Stock 45 units', new: 'Stock 145 units' } },
   { id: 'A4', userId: '2', userName: 'Priya Sharma', action: 'Created Order', details: 'Order ORD002 for Neha Gupta', timestamp: '2026-03-25 09:20' },
   { id: 'A5', userId: '1', userName: 'Sneha Khatry', action: 'Deleted Product', details: 'Removed discontinued item: Old Model Charger', timestamp: '2026-03-22 10:00' },
   { id: 'A6', userId: '3', userName: 'Amit Patel', action: 'Viewed Report', details: 'Accessed monthly sales report', timestamp: '2026-03-25 08:00' },
@@ -166,4 +170,12 @@ export function predictDaysUntilStockout(product: Product): number | null {
   if (product.salesLast30 === 0) return null;
   const dailySales = product.salesLast30 / 30;
   return Math.floor(product.stock / dailySales);
+}
+
+export function binLocationForProduct(product: Pick<Product, 'id' | 'binLocation'>): string {
+  if (product.binLocation) return product.binLocation;
+  const n = parseInt(String(product.id).replace(/\D/g, ''), 10) || 0;
+  const row = String.fromCharCode(65 + ((n - 1) % 6));
+  const shelf = String(((Math.floor((n - 1) / 6) % 12) + 1)).padStart(2, '0');
+  return `${row}-${shelf}`;
 }

@@ -5,8 +5,10 @@ import { formatCurrency, Order } from '@/lib/mockData';
 import { nextPrefixedId } from '@/lib/ids';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Search, Plus, ChevronDown, ChevronUp, X, Trash2, Download, RotateCcw } from 'lucide-react';
+import { Search, Plus, ChevronDown, ChevronUp, X, Trash2, Download, RotateCcw, Printer, MessageSquare } from 'lucide-react';
 import { generateInvoicePDF } from '@/lib/invoiceGenerator';
+import { openWarehousePicklistPrint } from '@/lib/warehousePicklist';
+import CommentThreadPanel, { countUnreadThreadComments, type ThreadComment } from '@/components/CommentThreadPanel';
 
 const statusColors: Record<string, string> = {
   Placed: 'bg-info/10 text-info',
@@ -20,9 +22,13 @@ interface OrderItem { productId: string; productName: string; quantity: number; 
 
 export default function OrdersPage() {
   const { hasPermission, user } = useAuth();
-  const { orders, setOrders, products, setProducts, customers, createCustomer, addLog, getAvailableStock, returns, setReturns } = useInventory();
+  const { orders, setOrders, products, setProducts, customers, createCustomer, addLog, getAvailableStock, returns, setReturns, users } = useInventory();
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('All');
+  const [commentsOnly, setCommentsOnly] = useState(false);
+  const [orderComments, setOrderComments] = useState<Record<string, ThreadComment[]>>({});
+  const [orderCommentViewed, setOrderCommentViewed] = useState<Record<string, string>>({});
+  const [commentOrderId, setCommentOrderId] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
   const [newCustomer, setNewCustomer] = useState('');
@@ -34,12 +40,16 @@ export default function OrdersPage() {
 
   const filtered = orders.filter(o =>
     (o.id.toLowerCase().includes(search.toLowerCase()) || o.customerName.toLowerCase().includes(search.toLowerCase())) &&
-    (statusFilter === 'All' || o.status === statusFilter)
+    (statusFilter === 'All' || o.status === statusFilter) &&
+    (!commentsOnly || (orderComments[o.id]?.length ?? 0) > 0)
   );
 
   const updateStatus = (orderId: string, newStatus: Order['status']) => {
+    const prevOrder = orders.find((o) => o.id === orderId);
     setOrders(prev => prev.map(o => o.id === orderId ? { ...o, status: newStatus } : o));
-    addLog(user?.name || 'System', 'Order Updated', `${orderId} → ${newStatus}`);
+    addLog(user?.name || 'System', 'Order Updated', `Order ${orderId} status changed to ${newStatus}.`, {
+      editDiff: { old: `Status: ${prevOrder?.status ?? '—'}`, new: `Status: ${newStatus}` },
+    });
   };
 
   const statusFlow: Order['status'][] = ['Placed', 'Processing', 'Shipped', 'Delivered'];
@@ -142,6 +152,15 @@ export default function OrdersPage() {
           <option value="All">All Statuses</option>
           {['Placed', 'Processing', 'Shipped', 'Delivered', 'Cancelled'].map(s => <option key={s}>{s}</option>)}
         </select>
+        <button
+          type="button"
+          onClick={() => setCommentsOnly((c) => !c)}
+          className={`h-10 px-4 rounded-lg border text-sm font-medium transition-colors ${
+            commentsOnly ? 'border-primary bg-primary/10 text-primary' : 'border-input bg-card text-foreground hover:bg-secondary'
+          }`}
+        >
+          Comments
+        </button>
         {hasPermission('add') && (
           <Button onClick={() => setShowAddModal(true)} className="gradient-primary text-primary-foreground gap-2">
             <Plus className="h-4 w-4" /> New Order
@@ -152,11 +171,19 @@ export default function OrdersPage() {
       <div className="space-y-3">
         {filtered.map(order => {
           const orderReturns = returns.filter(r => r.orderId === order.id);
+          const unread = countUnreadThreadComments(orderComments[order.id] ?? [], orderCommentViewed[order.id]);
           return (
             <div key={order.id} className="bg-card border border-border rounded-xl overflow-hidden hover:shadow-md transition-shadow">
               <button className="w-full px-5 py-4 flex items-center justify-between" onClick={() => setExpanded(expanded === order.id ? null : order.id)}>
                 <div className="flex items-center gap-4">
-                  <span className="font-mono text-sm font-semibold text-primary">{order.id}</span>
+                  <span className="font-mono text-sm font-semibold text-primary relative inline-flex items-center">
+                    {order.id}
+                    {unread > 0 && (
+                      <span className="ml-1.5 min-w-[18px] h-[18px] px-1 rounded-full bg-destructive text-destructive-foreground text-[10px] font-bold flex items-center justify-center">
+                        {unread > 9 ? '9+' : unread}
+                      </span>
+                    )}
+                  </span>
                   <span className="text-sm text-foreground font-medium">{order.customerName}</span>
                   <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${statusColors[order.status]}`}>{order.status}</span>
                   {orderReturns.length > 0 && <span className="text-xs px-2 py-0.5 rounded-full bg-warning/15 text-warning">RMA</span>}
@@ -185,6 +212,16 @@ export default function OrdersPage() {
                   <div className="flex items-center justify-between flex-wrap gap-2">
                     <span className="text-xs text-muted-foreground">Created by: {order.createdBy}</span>
                     <div className="flex gap-2 flex-wrap">
+                      {order.status === 'Processing' && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => openWarehousePicklistPrint(order, products)}
+                          className="gap-1"
+                        >
+                          <Printer className="h-3 w-3" /> Print picklist
+                        </Button>
+                      )}
                       <Button size="sm" variant="outline" onClick={() => generateInvoicePDF(order, products, { igst: igstMode })} className="gap-1">
                         <Download className="h-3 w-3" /> Invoice
                       </Button>
@@ -204,6 +241,9 @@ export default function OrdersPage() {
                           <Button size="sm" variant="destructive" onClick={() => updateStatus(order.id, 'Cancelled')}>Cancel</Button>
                         </>
                       )}
+                      <Button size="sm" variant="secondary" className="gap-1" onClick={() => setCommentOrderId(order.id)}>
+                        <MessageSquare className="h-3 w-3" /> Comments
+                      </Button>
                     </div>
                   </div>
                 </div>
@@ -278,6 +318,35 @@ export default function OrdersPage() {
       )}
 
       {/* Return Modal */}
+      <CommentThreadPanel
+        open={!!commentOrderId}
+        onClose={() => setCommentOrderId(null)}
+        title={commentOrderId ? `Order ${commentOrderId}` : ''}
+        comments={commentOrderId ? orderComments[commentOrderId] ?? [] : []}
+        users={users.map((u) => ({ id: u.id, name: u.name }))}
+        currentUser={{ id: user?.id ?? '0', name: user?.name ?? 'User' }}
+        onAfterOpen={() => {
+          if (commentOrderId) {
+            setOrderCommentViewed((v) => ({ ...v, [commentOrderId]: new Date().toISOString() }));
+          }
+        }}
+        onSend={(text, mentions) => {
+          if (!commentOrderId) return;
+          const msg: ThreadComment = {
+            id: `oc_${Date.now()}`,
+            userId: user?.id ?? '0',
+            userName: user?.name ?? 'User',
+            text,
+            ts: new Date().toLocaleString('en-IN', { dateStyle: 'short', timeStyle: 'short' }),
+            mentions,
+          };
+          setOrderComments((prev) => ({
+            ...prev,
+            [commentOrderId]: [...(prev[commentOrderId] ?? []), msg],
+          }));
+        }}
+      />
+
       {showReturn && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm" onClick={() => setShowReturn(null)}>
           <div className="bg-card border border-border rounded-2xl p-6 w-full max-w-lg shadow-lg animate-fade-in max-h-[85vh] overflow-y-auto" onClick={e => e.stopPropagation()}>

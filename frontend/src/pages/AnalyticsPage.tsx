@@ -6,6 +6,7 @@ import {
   buildCategorySalesFromProducts,
   formatChartMonth,
 } from '@/lib/aggregates';
+import MarketIntelligencePanel from '@/components/MarketIntelligencePanel';
 
 const PIE_COLORS = [
   'hsl(25, 95%, 53%)',
@@ -30,7 +31,7 @@ const datePresets = [
 
 export default function AnalyticsPage() {
   const { products, orders } = useInventory();
-  const [activeTab, setActiveTab] = useState<'overview' | 'aging' | 'heatmap' | 'trends'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'aging' | 'heatmap' | 'trends' | 'market'>('overview');
   const [dateRange, setDateRange] = useState(30);
   const [heatmapCatFilter, setHeatmapCatFilter] = useState('All');
 
@@ -117,6 +118,7 @@ export default function AnalyticsPage() {
     { id: 'aging' as const, label: 'Aging Report' },
     { id: 'heatmap' as const, label: 'Margin Heatmap' },
     { id: 'trends' as const, label: 'Trends' },
+    { id: 'market' as const, label: 'Market Intelligence' },
   ];
 
   return (
@@ -262,6 +264,8 @@ export default function AnalyticsPage() {
           </div>
         </div>
       )}
+
+      {activeTab === 'market' && <MarketIntelligencePanel products={products} />}
     </div>
   );
 }

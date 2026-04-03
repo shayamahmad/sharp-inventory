@@ -5,7 +5,8 @@ import { categories, formatCurrency, getStockStatus, Product } from '@/lib/mockD
 import { nextPrefixedId } from '@/lib/ids';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Search, Plus, Trash2, Edit2, ArrowUpDown, X, Package, Upload, CheckSquare, ChevronDown, ChevronUp } from 'lucide-react';
+import { Search, Plus, Trash2, Edit2, ArrowUpDown, X, Package, Upload, CheckSquare, ChevronDown, ChevronUp, MessageSquare } from 'lucide-react';
+import CommentThreadPanel, { countUnreadThreadComments, type ThreadComment } from '@/components/CommentThreadPanel';
 import Papa from 'papaparse';
 
 const stockBadge: Record<string, string> = {
@@ -18,11 +19,11 @@ const stockLabel: Record<string, string> = { ok: 'In Stock', low: 'Low Stock', c
 const abcColors: Record<string, string> = { A: 'bg-success/15 text-success', B: 'bg-warning/15 text-warning', C: 'bg-muted text-muted-foreground' };
 const reasonCodes = ['Damage', 'Theft', 'Audit Correction', 'Return', 'Opening Balance', 'Other'] as const;
 
-const emptyProduct = { name: '', category: 'Electronics', price: 0, cost: 0, stock: 0, minStock: 10, unit: 'pcs', supplier: '', salesLast30: 0 };
+const emptyProduct = { name: '', category: 'Electronics', price: 0, cost: 0, stock: 0, minStock: 10, unit: 'pcs', supplier: '', salesLast30: 0, binLocation: 'A-00' };
 
 export default function ProductsPage() {
   const { hasPermission, user } = useAuth();
-  const { products, setProducts, getReservedStock, getAvailableStock, addLog, productVariants, setProductVariants } = useInventory();
+  const { products, setProducts, getReservedStock, getAvailableStock, addLog, productVariants, setProductVariants, users } = useInventory();
   const [search, setSearch] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('All');
   const [abcFilter, setAbcFilter] = useState('All');
@@ -45,6 +46,10 @@ export default function ProductsPage() {
   const [showVariantModal, setShowVariantModal] = useState<string | null>(null);
   const [variantAttrs, setVariantAttrs] = useState({ sizes: 'S,M,L,XL', colors: 'Red,Blue' });
   const [stockFilterMode, setStockFilterMode] = useState<'all' | 'low'>('all');
+  const [commentsOnly, setCommentsOnly] = useState(false);
+  const [productComments, setProductComments] = useState<Record<string, ThreadComment[]>>({});
+  const [productCommentViewed, setProductCommentViewed] = useState<Record<string, string>>({});
+  const [commentProductId, setCommentProductId] = useState<string | null>(null);
 
   useEffect(() => {
     const apply = () => {
@@ -97,7 +102,8 @@ export default function ProductsPage() {
       p.name.toLowerCase().includes(search.toLowerCase()) &&
       (categoryFilter === 'All' || p.category === categoryFilter) &&
       (abcFilter === 'All' || abcData[p.id] === abcFilter) &&
-      (stockFilterMode === 'all' || getStockStatus(p) !== 'ok')
+      (stockFilterMode === 'all' || getStockStatus(p) !== 'ok') &&
+      (!commentsOnly || (productComments[p.id]?.length ?? 0) > 0)
     );
     result.sort((a, b) => {
       const dir = sortDir === 'asc' ? 1 : -1;
@@ -106,7 +112,7 @@ export default function ProductsPage() {
       return (a.stock - b.stock) * dir;
     });
     return result;
-  }, [products, search, categoryFilter, abcFilter, sortBy, sortDir, abcData, stockFilterMode]);
+  }, [products, search, categoryFilter, abcFilter, sortBy, sortDir, abcData, stockFilterMode, commentsOnly, productComments]);
 
   const toggleSort = (field: 'name' | 'price' | 'stock') => {
     if (sortBy === field) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
@@ -137,7 +143,9 @@ export default function ProductsPage() {
     if (!p) return;
     const newStock = Math.max(0, p.stock + adjustQty);
     setProducts(prev => prev.map(pr => pr.id === showAdjust ? { ...pr, stock: newStock } : pr));
-    addLog(user?.name || 'System', 'Stock Adjusted', `${p.name}: ${adjustQty > 0 ? '+' : ''}${adjustQty} (${adjustReason}). New stock: ${newStock}`);
+    addLog(user?.name || 'System', 'Stock Adjusted', `${p.name}: ${adjustQty > 0 ? '+' : ''}${adjustQty} (${adjustReason}). New stock: ${newStock}.`, {
+      editDiff: { old: `Stock ${p.stock} ${p.unit}`, new: `Stock ${newStock} ${p.unit}` },
+    });
     setShowAdjust(null);
     setAdjustQty(0);
   };
@@ -177,7 +185,7 @@ export default function ProductsPage() {
         setImportHeaders(results.meta.fields || []);
         setImportData((results.data as Record<string, string>[]) ?? []);
         const autoMap: Record<string, string> = {};
-        const fields = ['name', 'category', 'price', 'cost', 'stock', 'minStock', 'unit', 'supplier', 'salesLast30'];
+        const fields = ['name', 'category', 'price', 'cost', 'stock', 'minStock', 'unit', 'supplier', 'salesLast30', 'binLocation'];
         fields.forEach(f => {
           const match = (results.meta.fields || []).find(h => h.toLowerCase().replace(/[^a-z0-9]/g, '').includes(f.toLowerCase()));
           if (match) autoMap[f] = match;
@@ -204,6 +212,7 @@ export default function ProductsPage() {
       additions.push({
         id,
         name,
+        binLocation: (importMapping.binLocation && row[importMapping.binLocation]) || `Z-${id.replace(/\D/g, '').slice(-2).padStart(2, '0')}`,
         category: row[importMapping.category] || 'Electronics',
         price,
         cost: parseFloat(row[importMapping.cost]) || 0,
@@ -278,6 +287,15 @@ export default function ProductsPage() {
         >
           Low / critical stock
         </button>
+        <button
+          type="button"
+          onClick={() => setCommentsOnly((c) => !c)}
+          className={`h-10 px-4 rounded-lg border text-sm font-medium transition-colors ${
+            commentsOnly ? 'border-primary bg-primary/10 text-primary' : 'border-input bg-card text-foreground hover:bg-secondary'
+          }`}
+        >
+          Comments
+        </button>
         {selectedIds.size > 0 && hasPermission('edit') && (
           <Button onClick={() => setShowBulkAdjust(true)} variant="outline" className="gap-2">
             <CheckSquare className="h-4 w-4" /> Bulk Adjust ({selectedIds.size})
@@ -329,6 +347,7 @@ export default function ProductsPage() {
                 const reserved = getReservedStock(p.id);
                 const available = getAvailableStock(p.id);
                 const variants = productVariants[p.id];
+                const unread = countUnreadThreadComments(productComments[p.id] ?? [], productCommentViewed[p.id]);
                 return (
                   <React.Fragment key={p.id}>
                     <tr className="border-b border-border/50 hover:bg-secondary/30 transition-colors">
@@ -337,7 +356,14 @@ export default function ProductsPage() {
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-2">
                           <div>
-                            <p className="text-sm font-medium text-foreground">{p.name}</p>
+                            <p className="text-sm font-medium text-foreground inline-flex items-center gap-1.5">
+                              {p.name}
+                              {unread > 0 && (
+                                <span className="min-w-[18px] h-[18px] px-1 rounded-full bg-destructive text-destructive-foreground text-[10px] font-bold flex items-center justify-center">
+                                  {unread > 9 ? '9+' : unread}
+                                </span>
+                              )}
+                            </p>
                             <p className="text-xs text-muted-foreground">{p.supplier}</p>
                           </div>
                           {variants && <span className="text-xs px-1.5 py-0.5 rounded bg-primary/10 text-primary">{variants.length} variants</span>}
@@ -354,6 +380,14 @@ export default function ProductsPage() {
                         <div className="flex gap-1">
                           {hasPermission('edit') && (
                             <>
+                              <button
+                                type="button"
+                                onClick={() => setCommentProductId(p.id)}
+                                className="p-1.5 rounded-md hover:bg-secondary transition-colors text-muted-foreground hover:text-foreground"
+                                title="Comments"
+                              >
+                                <MessageSquare className="h-4 w-4" />
+                              </button>
                               <button onClick={() => { setShowAdjust(p.id); setAdjustQty(0); }} className="p-1.5 rounded-md hover:bg-secondary transition-colors text-muted-foreground hover:text-foreground" title="Adjust Stock">
                                 <Package className="h-4 w-4" />
                               </button>
@@ -451,6 +485,10 @@ export default function ProductsPage() {
                 <label className="text-sm font-medium text-foreground mb-1 block">Supplier *</label>
                 <Input value={newProduct.supplier} onChange={e => setNewProduct(p => ({ ...p, supplier: e.target.value }))} placeholder="e.g. TechWorld Pvt Ltd" />
               </div>
+              <div>
+                <label className="text-sm font-medium text-foreground mb-1 block">Bin location</label>
+                <Input value={newProduct.binLocation} onChange={e => setNewProduct(p => ({ ...p, binLocation: e.target.value }))} placeholder="e.g. A-01" />
+              </div>
               <div className="flex gap-3 pt-2">
                 <Button variant="outline" onClick={() => setShowAddModal(false)} className="flex-1">Cancel</Button>
                 <Button onClick={addProduct} className="flex-1 gradient-primary text-primary-foreground"
@@ -522,7 +560,7 @@ export default function ProductsPage() {
             <h3 className="text-lg font-display font-bold text-foreground mb-4">Map CSV Columns</h3>
             <p className="text-sm text-muted-foreground mb-4">{importData.length} rows found</p>
             <div className="grid grid-cols-2 gap-3 mb-4">
-              {['name', 'category', 'price', 'cost', 'stock', 'minStock', 'unit', 'supplier'].map(field => (
+              {['name', 'category', 'price', 'cost', 'stock', 'minStock', 'unit', 'supplier', 'binLocation'].map(field => (
                 <div key={field}>
                   <label className="text-xs font-medium text-foreground mb-1 block capitalize">{field} {field === 'name' || field === 'price' ? '*' : ''}</label>
                   <select value={importMapping[field] || ''} onChange={e => setImportMapping(p => ({ ...p, [field]: e.target.value }))}
@@ -540,6 +578,35 @@ export default function ProductsPage() {
           </div>
         </div>
       )}
+
+      <CommentThreadPanel
+        open={!!commentProductId}
+        onClose={() => setCommentProductId(null)}
+        title={commentProductId ? `Product ${products.find((x) => x.id === commentProductId)?.name ?? commentProductId}` : ''}
+        comments={commentProductId ? productComments[commentProductId] ?? [] : []}
+        users={users.map((u) => ({ id: u.id, name: u.name }))}
+        currentUser={{ id: user?.id ?? '0', name: user?.name ?? 'User' }}
+        onAfterOpen={() => {
+          if (commentProductId) {
+            setProductCommentViewed((v) => ({ ...v, [commentProductId]: new Date().toISOString() }));
+          }
+        }}
+        onSend={(text, mentions) => {
+          if (!commentProductId) return;
+          const msg: ThreadComment = {
+            id: `pc_${Date.now()}`,
+            userId: user?.id ?? '0',
+            userName: user?.name ?? 'User',
+            text,
+            ts: new Date().toLocaleString('en-IN', { dateStyle: 'short', timeStyle: 'short' }),
+            mentions,
+          };
+          setProductComments((prev) => ({
+            ...prev,
+            [commentProductId]: [...(prev[commentProductId] ?? []), msg],
+          }));
+        }}
+      />
 
       {/* Variant Modal */}
       {showVariantModal && (

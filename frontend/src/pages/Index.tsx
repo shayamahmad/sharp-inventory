@@ -5,6 +5,7 @@ import { InventoryProvider, useInventory } from '@/contexts/InventoryContext';
 import LoginPage from '@/components/LoginPage';
 import AppSidebar from '@/components/AppSidebar';
 import AppHeader from '@/components/AppHeader';
+import KpiTicker from '@/components/KpiTicker';
 import DashboardPage from './DashboardPage';
 import ProductsPage from './ProductsPage';
 import OrdersPage from './OrdersPage';
@@ -82,6 +83,7 @@ function InventoryShell({
       <AppSidebar currentPage={currentPage} onNavigate={setCurrentPage} />
       <div className="flex-1 flex flex-col min-w-0">
         <AppHeader title={pageInfo.title} subtitle={pageInfo.subtitle} onNavigate={handleHeaderNavigate} />
+        <KpiTicker />
         <main className="flex-1 p-6 overflow-auto">
           {currentPage === 'dashboard' && <DashboardPage />}
           {currentPage === 'products' && <ProductsPage />}

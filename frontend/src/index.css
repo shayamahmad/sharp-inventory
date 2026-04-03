@@ -132,7 +132,23 @@
   }
 }
 
+@keyframes kpi-marquee {
+  0% {
+    transform: translateX(0);
+  }
+  100% {
+    transform: translateX(-50%);
+  }
+}
+
 @layer utilities {
+  .kpi-ticker-track {
+    animation: kpi-marquee 55s linear infinite;
+    will-change: transform;
+  }
+  .kpi-ticker-track:hover {
+    animation-play-state: paused;
+  }
   .gradient-primary {
     background: var(--gradient-primary);
   }

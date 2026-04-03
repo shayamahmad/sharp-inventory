@@ -133,7 +133,9 @@ export default function ManufacturingPage() {
         console.error('Raw material PATCH', err)
       );
     }
-    addLog(user?.name || 'System', 'Raw material cost', `${prevRow.materialName}: ${formatCurrency(prevRow.costPerUnit)} → ${formatCurrency(v)}`);
+    addLog(user?.name || 'System', 'Raw material cost', `${prevRow.materialName} unit cost updated.`, {
+      editDiff: { old: formatCurrency(prevRow.costPerUnit), new: formatCurrency(v) },
+    });
   };
 
   const tabs = [
