@@ -1,11 +1,25 @@
 import React, { useState, useMemo } from 'react';
 import { useInventory } from '@/contexts/InventoryContext';
 import { formatCurrency, predictDaysUntilStockout, getStockStatus } from '@/lib/mockData';
-import { Brain, AlertTriangle, TrendingDown, TrendingUp, Clock, ChevronDown, ChevronUp } from 'lucide-react';
+import { build30DayDemandForecast } from '@/lib/demandForecast';
+import { Brain, AlertTriangle, TrendingDown, TrendingUp, Clock, ChevronDown, ChevronUp, LineChart as LineChartIcon, Info } from 'lucide-react';
+import {
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip as RechartsTooltip,
+  Legend,
+  ResponsiveContainer,
+} from 'recharts';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 
 export default function PredictionsPage() {
   const { products, purchaseOrders } = useInventory();
   const [expandedSection, setExpandedSection] = useState<string | null>(null);
+  const [mainTab, setMainTab] = useState<'restock' | 'forecast'>('restock');
+  const [forecastProductId, setForecastProductId] = useState<string>(() => products[0]?.id ?? '');
 
   // Supplier lead time calculation
   const supplierLeadTimes = useMemo(() => {
@@ -50,6 +64,19 @@ export default function PredictionsPage() {
 
   const toggleSection = (id: string) => setExpandedSection(expandedSection === id ? null : id);
 
+  const selectedForecastProduct = products.find((p) => p.id === forecastProductId) ?? products[0];
+  const demandForecast = useMemo(() => {
+    if (!selectedForecastProduct) return null;
+    return build30DayDemandForecast(selectedForecastProduct.salesLast30, selectedForecastProduct.id);
+  }, [selectedForecastProduct]);
+
+  React.useEffect(() => {
+    if (products.length === 0) return;
+    if (!forecastProductId || !products.some((p) => p.id === forecastProductId)) {
+      setForecastProductId(products[0]!.id);
+    }
+  }, [products, forecastProductId]);
+
   const sections = [
     { id: 'urgent', label: 'Urgent Restock', count: urgentItems.length, icon: AlertTriangle, color: 'text-destructive', bg: 'bg-destructive/10', items: urgentItems },
     { id: 'warning', label: 'Warning', count: warningItems.length, icon: Clock, color: 'text-warning', bg: 'bg-warning/10', items: warningItems },
@@ -58,6 +85,7 @@ export default function PredictionsPage() {
   ];
 
   return (
+    <TooltipProvider>
     <div className="space-y-6 animate-fade-in">
       <div className="gradient-primary rounded-xl p-6 flex items-center gap-4">
         <Brain className="h-10 w-10 text-primary-foreground" />
@@ -67,6 +95,154 @@ export default function PredictionsPage() {
         </div>
       </div>
 
+      <div className="flex gap-2 border-b border-border pb-0">
+        {[
+          { id: 'restock' as const, label: 'Restock insights', icon: Brain },
+          { id: 'forecast' as const, label: 'Forecast', icon: LineChartIcon },
+        ].map((tab) => {
+          const Icon = tab.icon;
+          return (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => setMainTab(tab.id)}
+              className={`flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition-colors -mb-px ${
+                mainTab === tab.id
+                  ? 'border-primary text-primary'
+                  : 'border-transparent text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              <Icon className="h-4 w-4" />
+              {tab.label}
+            </button>
+          );
+        })}
+      </div>
+
+      {mainTab === 'forecast' && (
+        <div className="bg-card border border-border rounded-xl p-5 space-y-5">
+          <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
+            <div>
+              <h3 className="font-display font-semibold text-foreground flex items-center gap-2">
+                <LineChartIcon className="h-5 w-5 text-primary" />
+                AI demand forecast (30 days)
+              </h3>
+              <p className="text-sm text-muted-foreground mt-1">
+                Exponential smoothing (α = 0.3) on daily buckets derived from <span className="text-foreground">salesLast30</span>.
+                Upper and lower bounds widen by forecast horizon.
+              </p>
+            </div>
+            <div className="flex flex-col gap-1 min-w-[200px]">
+              <label htmlFor="forecast-product" className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                Product
+              </label>
+              <select
+                id="forecast-product"
+                value={forecastProductId}
+                onChange={(e) => setForecastProductId(e.target.value)}
+                className="h-10 px-3 rounded-lg border border-input bg-background text-foreground text-sm"
+                disabled={products.length === 0}
+              >
+                {products.length === 0 ? (
+                  <option value="">No products</option>
+                ) : (
+                  products.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name}
+                    </option>
+                  ))
+                )}
+              </select>
+            </div>
+          </div>
+
+          {products.length === 0 ? (
+            <div className="rounded-lg border border-dashed border-border bg-muted/30 py-16 text-center text-sm text-muted-foreground">
+              Add products to see demand forecasts.
+            </div>
+          ) : demandForecast && (
+            <>
+              <div className="flex flex-wrap items-center gap-3 rounded-lg bg-secondary/40 border border-border px-4 py-3">
+                <span className="text-sm font-medium text-foreground">Forecast accuracy</span>
+                <span className="text-2xl font-display font-bold text-primary tabular-nums">
+                  {demandForecast.hasSignal ? `${demandForecast.accuracyPct}%` : '—'}
+                </span>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button type="button" className="text-muted-foreground hover:text-foreground p-1 rounded" aria-label="How accuracy is calculated">
+                      <Info className="h-4 w-4" />
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent className="max-w-xs text-xs">
+                    Compares total predicted vs actual daily demand over the latter half of the 30-day history window used to fit the model (one-step-ahead SES).
+                  </TooltipContent>
+                </Tooltip>
+                {!demandForecast.hasSignal && (
+                  <span className="text-xs text-muted-foreground">No sales in the last 30 days — forecast is flat at zero.</span>
+                )}
+              </div>
+
+              <div className="h-[320px] w-full min-h-[280px]">
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={demandForecast.chartRows} margin={{ top: 8, right: 16, left: 0, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                    <XAxis dataKey="label" stroke="hsl(var(--muted-foreground))" fontSize={10} interval={4} />
+                    <YAxis
+                      stroke="hsl(var(--muted-foreground))"
+                      fontSize={11}
+                      tickFormatter={(v) => (v >= 1000 ? `${(v / 1000).toFixed(1)}k` : `${v}`)}
+                    />
+                    <RechartsTooltip
+                      contentStyle={{
+                        background: 'hsl(var(--card))',
+                        border: '1px solid hsl(var(--border))',
+                        borderRadius: '8px',
+                        color: 'hsl(var(--foreground))',
+                      }}
+                      formatter={(value: number, name: string) => [value.toFixed(2), name === 'predicted' ? 'Predicted demand' : name === 'upper' ? 'Upper bound' : 'Lower bound']}
+                    />
+                    <Legend
+                      formatter={(value) =>
+                        value === 'predicted' ? 'Predicted demand' : value === 'upper' ? 'Upper bound' : 'Lower bound'
+                      }
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="predicted"
+                      name="predicted"
+                      stroke="hsl(var(--primary))"
+                      strokeWidth={2.5}
+                      dot={false}
+                      activeDot={{ r: 4 }}
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="upper"
+                      name="upper"
+                      stroke="hsl(var(--muted-foreground))"
+                      strokeWidth={1.5}
+                      strokeDasharray="6 4"
+                      dot={false}
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="lower"
+                      name="lower"
+                      stroke="hsl(var(--muted-foreground))"
+                      strokeWidth={1.5}
+                      strokeDasharray="6 4"
+                      dot={false}
+                    />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
+      {mainTab === 'restock' && (
+      <>
       {/* Summary Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {sections.map(s => {
@@ -161,6 +337,9 @@ export default function PredictionsPage() {
           </div>
         </div>
       )}
+      </>
+      )}
     </div>
+    </TooltipProvider>
   );
 }
