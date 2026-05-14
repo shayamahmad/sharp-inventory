@@ -1,4 +1,4 @@
-# INVETO
+# INVERON
 
 Inventory and order management: **React + Vite** (`frontend/`), **Express + MongoDB** (`backend/`), and optional **Docker MongoDB** (`docker-compose.yml`).
 
